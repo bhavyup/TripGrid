@@ -83,7 +83,12 @@ def ingest_month(year: int, month: int) -> dict:
     n_quar = int(np.count_nonzero(~valid))
 
     pu = table.column("pu_location_id").to_numpy(zero_copy_only=False)
-    borough = np.array([boroughs.get(int(x), "Unknown") for x in pu], dtype=object)
+    # The zone lookup's borough for a few zones is literally "N/A" — the
+    # slash would split the partition directory into two levels, so the
+    # stored partition label is "N-A". Counts are recorded under "N-A".
+    borough = np.array(
+        [boroughs.get(int(x), "Unknown").replace("/", "-") for x in pu], dtype=object
+    )
     month_label = f"{year}-{month:02d}"
 
     good = table.filter(valid)
