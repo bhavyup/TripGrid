@@ -58,6 +58,19 @@ def hour_of(datetimes: np.ndarray) -> np.ndarray:
     return (datetimes.astype("datetime64[h]").astype(np.int64) % 24).astype(np.int64)
 
 
+def weekday_and_hour(datetimes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(weekday Mon=0..Sun=6, hour 0..23) from ONE int64 conversion.
+
+    weekday_of + hour_of each walk the array several times; this
+    fused version converts once and derives both from the hour
+    count (days = hours // 24). Same answers, a fraction of the
+    passes — it matters at 36M rows.
+    """
+    hours = datetimes.astype("datetime64[h]").astype(np.int64)
+    days = hours // 24
+    return (days + 3) % 7, hours - days * 24
+
+
 def topk_indices(values: np.ndarray, k: int) -> np.ndarray:
     """Indexes of the k largest values, largest first.
 

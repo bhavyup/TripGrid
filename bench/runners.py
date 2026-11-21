@@ -51,7 +51,7 @@ def tripgrid(query: str, year: int):
     from engine import executor
 
     if query == "q1":
-        counts, _ = executor.run_q1(year)
+        counts, _ = executor.run_q1(year, workers=executor.DEFAULT_WORKERS)
         return {"total": int(counts.sum()), "matrix": counts.tolist()}
     if query == "q2":
         rows, _ = executor.run_q2(year)

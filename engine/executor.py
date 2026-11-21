@@ -65,12 +65,17 @@ def run_q1(
     year: int,
     batch_rows: int = DEFAULT_BATCH_ROWS,
     ceiling_mb: float = DEFAULT_CEILING_MB,
+    workers: int = 1,
 ) -> tuple[np.ndarray, dict]:
     """Benchmark Query 1: trips per pickup zone per month.
 
     Returns (counts, stats) where counts is a (12, ZONE_RANGE) matrix:
     counts[month, zone] = trips that started in that zone that month.
+    workers=1 is the original M1 single-process path; workers>1 uses
+    the pool (one partial count vector per file, merged by addition).
     """
+    if workers > 1:
+        return _run_q1_pool(year, workers, ceiling_mb)
     counts = np.zeros(MONTHS * ZONE_RANGE, dtype=np.int64)
     rows = 0
     chunks = 0
@@ -116,6 +121,16 @@ from engine import planner, zones
 PAYMENT_TYPES = 8  # payment_type values are 0..6 in practice
 FRIDAY = 4  # in kernels.weekday_of numbering (Monday=0)
 EVENING_START, EVENING_END = 17, 23  # 17:00 .. 23:59
+POOL_BATCH_ROWS = 262_144  # pool workers take bigger bites: fewer per-batch overheads
+# Worker count is a MEMORY decision, not a hope. The 2-3 cap in the
+# design came from Windows spawn overhead (~100-150 MB per worker);
+# in WSL/Linux the pool forks, startup is cheap, and a worker's peak
+# is ~180 MB — so 8 workers + main stay inside the 2 GB ceiling with
+# room to spare. The ceiling is still enforced by measurement on
+# every run (_run_pool raises if the tree crosses it); if a future
+# query's workers get heavier, the run fails loudly instead of
+# quietly swapping, and the count comes down.
+DEFAULT_WORKERS = 8
 
 
 def _months_of(year: int) -> set[str]:
@@ -154,7 +169,7 @@ def _q2_partial(job) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     scanned = 0
     pf = pq.ParquetFile(path)
     for batch in pf.iter_batches(
-        batch_size=DEFAULT_BATCH_ROWS,
+        batch_size=POOL_BATCH_ROWS,
         columns=["pu_location_id", "payment_type", "fare_amount", "tip_amount"],
     ):
         pu = batch.column(0).to_numpy(zero_copy_only=False)
@@ -171,7 +186,7 @@ def _q2_partial(job) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     return counts, fare_sum, tip_sum, scanned
 
 
-def run_q2(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB):
+def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB):
     """Benchmark Query 2: for rides that START at an airport, the
     average fare and tip % per payment type. Pruning: only the
     boroughs that contain an airport (Queens, EWR) are read."""
@@ -216,21 +231,28 @@ def _q3_partial(job) -> tuple[np.ndarray, int]:
     scanned = 0
     pf = pq.ParquetFile(path)
     for batch in pf.iter_batches(
-        batch_size=DEFAULT_BATCH_ROWS, columns=["pickup_datetime", "do_location_id"]
+        batch_size=POOL_BATCH_ROWS, columns=["pickup_datetime", "do_location_id"]
     ):
         dt = batch.column(0).to_numpy(zero_copy_only=False)
         scanned += dt.size
-        mask = (kernels.weekday_of(dt) == FRIDAY) & (
-            (kernels.hour_of(dt) >= EVENING_START) & (kernels.hour_of(dt) <= EVENING_END)
-        )
-        if not mask.any():
+        # One fused pass for weekday+hour, then keep only Fridays
+        # (~1/7 of rows) before the hour check — the expensive
+        # filtering then runs on the small subset, not the batch.
+        weekday, hour = kernels.weekday_and_hour(dt)
+        friday = np.nonzero(weekday == FRIDAY)[0]
+        if friday.size == 0:
             continue
-        do = batch.column(1).to_numpy(zero_copy_only=False)[mask]
+        evening = friday[
+            (hour[friday] >= EVENING_START) & (hour[friday] <= EVENING_END)
+        ]
+        if evening.size == 0:
+            continue
+        do = batch.column(1).to_numpy(zero_copy_only=False)[evening]
         counts += kernels.group_count(do, ZONE_RANGE)
     return counts, scanned
 
 
-def run_q3(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB, k: int = 20):
+def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB, k: int = 20):
     """Benchmark Query 3: top-20 drop-off zones for rides that start
     in Manhattan on a Friday evening (17:00-23:59). Pruning: only
     Manhattan partitions are read. The zone join turns ids into
@@ -266,6 +288,38 @@ def run_q3(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB, 
 from engine import percentile
 
 
+def _q1_partial(job) -> tuple[int, np.ndarray, int]:
+    path, month_idx = job
+    counts = np.zeros(ZONE_RANGE, dtype=np.int64)
+    scanned = 0
+    pf = pq.ParquetFile(path)
+    for batch in pf.iter_batches(batch_size=POOL_BATCH_ROWS, columns=["pu_location_id"]):
+        zones_arr = batch.column(0).to_numpy(zero_copy_only=False)
+        scanned += zones_arr.size
+        counts += kernels.group_count(zones_arr, ZONE_RANGE)
+    return month_idx, counts, scanned
+
+
+def _run_q1_pool(year: int, workers: int, ceiling_mb: float):
+    index = planner.load_index()
+    selected, prune = planner.select_partitions(index, months=_months_of(year))
+    jobs = [
+        (str(REPO_ROOT / e["path"]), int(e["month"][5:7]) - 1) for e in selected
+    ]
+    partials, stats = _run_pool(_q1_partial, jobs, workers, ceiling_mb)
+    counts = np.zeros((MONTHS, ZONE_RANGE), dtype=np.int64)
+    scanned = 0
+    for month_idx, vec, n in partials:
+        counts[month_idx] += vec
+        scanned += n
+    stats.update(prune)
+    stats["rows_scanned"] = int(scanned)
+    stats["rows_per_second"] = int(scanned / stats["wall_seconds"])
+    stats["query"] = "Q1 trips per pickup zone per month (pool)"
+    stats["year"] = year
+    return counts, stats
+
+
 def _q4_partial(job) -> tuple[str, np.ndarray, np.ndarray, int]:
     path, borough = job
     keys = np.empty(0, dtype=np.float64)
@@ -273,14 +327,14 @@ def _q4_partial(job) -> tuple[str, np.ndarray, np.ndarray, int]:
     table = (keys, counts)
     scanned = 0
     pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(batch_size=DEFAULT_BATCH_ROWS, columns=["fare_amount"]):
+    for batch in pf.iter_batches(batch_size=POOL_BATCH_ROWS, columns=["fare_amount"]):
         fares = batch.column(0).to_numpy(zero_copy_only=False)
         scanned += fares.size
         table = percentile.merge_sparse(table, percentile.chunk_sparse_table(fares))
     return borough, table[0], table[1], scanned
 
 
-def run_q4(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB):
+def run_q4(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB):
     """Benchmark Query 4: exact fare percentiles (p50/p90/p99) per
     pickup borough, via the locked hybrid sparse-table design.
     Every partition of the year is read (percentiles are holistic —
