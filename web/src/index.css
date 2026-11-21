@@ -1027,8 +1027,19 @@ section {
 .bnote {
   color: var(--bone-dim);
   font-size: 13.5px;
-  max-width: 560px;
+  max-width: 660px;
   line-height: 1.55;
+}
+
+/* Hand-set notes (the four Cold explanations): full section width
+   so a line the author ends with \n fits on one printed line, and
+   each \n segment is its own block — the break is exact. */
+.bnote.lines {
+  max-width: none;
+}
+
+.nline {
+  display: block;
 }
 
 .bcharts {

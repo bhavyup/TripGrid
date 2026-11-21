@@ -10,8 +10,12 @@ const QUERY_TITLES: Record<string, string> = {
   q4: "Exact fare percentiles per borough",
 };
 
+/* The four explanations under Cold. To force a line to end at an
+ * exact spot, put \n there — the page breaks exactly where the \n
+ * sits, nowhere else. These notes print at full section width
+ * (.bnote.lines), so a hand-set line stays on one line. */
 const NOTES: Record<string, string> = {
-  q1: "TripGrid leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table — so a C++ engine has nothing to beat it with here.",
+  q1: "TripGrid leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table —\nso a C++ engine has nothing to beat it with here.",
   q2: "DuckDB leads, and this page says so. On a small, heavily filtered scan its C++ vectorised reader beats Python orchestration. TripGrid's answer is still exact and still under a third of the ceiling.",
   q3: "DuckDB leads again. Most of a year's rides start in Manhattan, so pruning can only soften this scan, not skip it — the honest cost of a row-at-a-time filter in Python.",
   q4: "The reason TripGrid exists. Exact percentiles from sparse fare tables, nothing sorted, nothing approximated — while DuckDB sorts the year in memory and breaks the 2 GB ceiling doing it.",
@@ -32,6 +36,20 @@ const ENGINES: { id: string; label: string }[] = [
 ];
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** Renders note text with hard line breaks: every \n in the
+ * string becomes the start of a new printed line. */
+function NoteText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\n").map((line, i) => (
+        <span className="nline" key={i}>
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
 
 /** One engine's line in a chart. Undefined numbers render as an
  * empty bar and an em dash — a run that hasn't happened yet. */
@@ -200,7 +218,9 @@ function ColdView({ suite }: { suite: BenchSuite | undefined }) {
                 )}
               </span>
             </div>
-            <p className="bnote">{NOTES[q]}</p>
+            <p className="bnote lines">
+              <NoteText text={NOTES[q]} />
+            </p>
             <Charts rows={rows} />
           </div>
         );
