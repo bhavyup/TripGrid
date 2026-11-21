@@ -95,6 +95,17 @@ def test_live_records_only_real_runs(client):
     assert live["2024"]["q2"]["runs"] == 1
     assert live["2024"]["q2"]["wall_seconds"] == rec["wall_seconds"]
 
+    # A fresh run bypasses the cache: it really executes, and
+    # the live record moves to 2.
+    fresh = client.post(
+        "/api/query", json={"query": "q2", "year": 2024, "fresh": True}
+    ).json()
+    assert fresh["cached"] is False
+    body = _wait_done(client, fresh["job_id"])
+    assert body["status"] == "done"
+    live = client.get("/api/live").json()
+    assert live["2024"]["q2"]["runs"] == 2
+
 
 def test_errors(client):
     assert client.post("/api/query", json={"query": "q9", "year": 2024}).status_code == 400

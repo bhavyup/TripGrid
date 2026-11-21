@@ -28,6 +28,7 @@ export default function App() {
   const [year, setYear] = useState(2025);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [running, setRunning] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const [filesDone, setFilesDone] = useState(0);
   const [status, setStatus] = useState("Idle — pick a question and run it");
   const [payload, setPayload] = useState<JobPayload | null>(null);
@@ -73,7 +74,7 @@ export default function App() {
     setFilesDone(0);
     setStatus("Reading — the engine is scanning the selected files");
     try {
-      const result = await runQuery(query, year, (done) => setFilesDone(done));
+      const result = await runQuery(query, year, (done) => setFilesDone(done), fresh);
       cacheRef.current.set(`${query}:${year}`, result);
       setPayload(result);
       // A real execution just landed on the server — pull the
@@ -91,7 +92,7 @@ export default function App() {
     } finally {
       setRunning(false);
     }
-  }, [query, year, running, refreshLive]);
+  }, [query, year, running, fresh, refreshLive]);
 
   const stats = payload?.stats;
   const queries = meta?.queries ?? [];
@@ -206,6 +207,13 @@ export default function App() {
 
             <button className="runbtn" onClick={run} disabled={running}>
               {running ? "Reading…" : "Run the question"}
+            </button>
+            <button
+              className={`freshtoggle${fresh ? " on" : ""}`}
+              onClick={() => setFresh((f) => !f)}
+              aria-pressed={fresh}
+            >
+              Fresh run — skip memory, count it live
             </button>
             <p className="runstatus">
               {running && <span className="dot" />}

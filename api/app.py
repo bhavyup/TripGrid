@@ -213,6 +213,9 @@ async def _run_job(job: Job) -> None:
 class QueryRequest(BaseModel):
     query: str
     year: int
+    # fresh=True skips the result cache: the engine really runs,
+    # and the run is recorded in the live evidence.
+    fresh: bool = False
 
 
 @app.get("/api/health")
@@ -265,7 +268,7 @@ async def start_query(req: QueryRequest):
         raise HTTPException(400, f"unknown query {req.query!r}; expected one of {sorted(QUERIES)}")
     if req.year not in _years_available():
         raise HTTPException(400, f"no data for year {req.year}")
-    cached = STATE["cache"].get(f"{req.query}:{req.year}")
+    cached = None if req.fresh else STATE["cache"].get(f"{req.query}:{req.year}")
     if cached is not None:
         return {"cached": True, "job_id": None, **cached}
     job = Job(req.query, req.year)

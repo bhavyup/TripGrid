@@ -151,11 +151,12 @@ export async function runQuery(
   query: string,
   year: number,
   onProgress: (done: number, total: number) => void,
+  fresh = false,
 ): Promise<JobPayload> {
   const resp = await fetch("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, year }),
+    body: JSON.stringify({ query, year, fresh }),
   });
   if (!resp.ok) throw new Error(`start query -> ${resp.status}`);
   const started = (await resp.json()) as {
