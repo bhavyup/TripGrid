@@ -7,3 +7,4 @@ fastapi
 uvicorn
 pytest
 matplotlib
+httpx  # only for the API tests (FastAPI TestClient)

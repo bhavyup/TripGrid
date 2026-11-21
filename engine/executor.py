@@ -66,6 +66,8 @@ def run_q1(
     batch_rows: int = DEFAULT_BATCH_ROWS,
     ceiling_mb: float = DEFAULT_CEILING_MB,
     workers: int = 1,
+    pool=None,
+    progress=None,
 ) -> tuple[np.ndarray, dict]:
     """Benchmark Query 1: trips per pickup zone per month.
 
@@ -75,7 +77,7 @@ def run_q1(
     the pool (one partial count vector per file, merged by addition).
     """
     if workers > 1:
-        return _run_q1_pool(year, workers, ceiling_mb)
+        return _run_q1_pool(year, workers, ceiling_mb, pool=pool, progress=progress)
     counts = np.zeros(MONTHS * ZONE_RANGE, dtype=np.int64)
     rows = 0
     chunks = 0
@@ -143,7 +145,15 @@ def _months_of(year: int) -> set[str]:
     return {f"{year}-{m:02d}" for m in range(1, 13)}
 
 
-def _run_pool(worker, jobs: list, workers: int, ceiling_mb: float, est_rows: int | None = None):
+def _run_pool(
+    worker,
+    jobs: list,
+    workers: int,
+    ceiling_mb: float,
+    est_rows: int | None = None,
+    pool=None,
+    progress=None,
+):
     """Run worker over jobs, merge nothing — returns the list of
     partials plus run stats. Peak RSS is measured on the process
     (threads share it), and the ceiling is enforced on it.
@@ -151,15 +161,40 @@ def _run_pool(worker, jobs: list, workers: int, ceiling_mb: float, est_rows: int
     est_rows is the planner's surviving-row estimate: below
     INLINE_ROWS_THRESHOLD the pool is skipped entirely and the
     partials run inline — scheduling would cost more than the scan.
+
+    pool: an optional caller-owned ThreadPoolExecutor (the API
+    server lends its ONE shared pool; the CLI creates a private one
+    per run). progress: optional callback(done, total) fired as
+    each job finishes — the server bridges it to its event loop.
     """
     inline = est_rows is not None and est_rows < INLINE_ROWS_THRESHOLD
     t0 = time.perf_counter()
     with PeakSampler() as sampler:
         if inline:
-            partials = [worker(job) for job in jobs]
+            partials = []
+            for i, job in enumerate(jobs, start=1):
+                partials.append(worker(job))
+                if progress:
+                    progress(i, len(jobs))
         else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                partials = list(pool.map(worker, jobs))
+            from concurrent.futures import as_completed
+
+            def _collect(executor):
+                futures = {executor.submit(worker, job): i for i, job in enumerate(jobs)}
+                out = [None] * len(futures)
+                done = 0
+                for fut in as_completed(futures):
+                    out[futures[fut]] = fut.result()
+                    done += 1
+                    if progress:
+                        progress(done, len(jobs))
+                return out
+
+            if pool is not None:
+                partials = _collect(pool)
+            else:
+                with ThreadPoolExecutor(max_workers=workers) as own_pool:
+                    partials = _collect(own_pool)
     wall = time.perf_counter() - t0
     if sampler.peak_mb > ceiling_mb:
         raise CeilingExceeded(
@@ -202,7 +237,7 @@ def _q2_partial(job) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     return counts, fare_sum, tip_sum, scanned
 
 
-def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB):
+def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB, pool=None, progress=None):
     """Benchmark Query 2: for rides that START at an airport, the
     average fare and tip % per payment type. Pruning: only the
     boroughs that contain an airport (Queens, EWR) are read."""
@@ -217,7 +252,8 @@ def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
         (str(REPO_ROOT / e["path"]), tuple(sorted(airports))) for e in selected
     ]
     partials, stats = _run_pool(
-        _q2_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+        _q2_partial, jobs, workers, ceiling_mb,
+        est_rows=prune["rows_selected"], pool=pool, progress=progress,
     )
     counts = sum(p[0] for p in partials)
     fare_sum = sum(p[1] for p in partials)
@@ -270,7 +306,7 @@ def _q3_partial(job) -> tuple[np.ndarray, int]:
     return counts, scanned
 
 
-def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB, k: int = 20):
+def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB, k: int = 20, pool=None, progress=None):
     """Benchmark Query 3: top-20 drop-off zones for rides that start
     in Manhattan on a Friday evening (17:00-23:59). Pruning: only
     Manhattan partitions are read. The zone join turns ids into
@@ -281,7 +317,8 @@ def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
     )
     jobs = [(str(REPO_ROOT / e["path"]),) for e in selected]
     partials, stats = _run_pool(
-        _q3_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+        _q3_partial, jobs, workers, ceiling_mb,
+        est_rows=prune["rows_selected"], pool=pool, progress=progress,
     )
     counts = sum(p[0] for p in partials)
     zone_map = zones.load_zones()
@@ -320,14 +357,15 @@ def _q1_partial(job) -> tuple[int, np.ndarray, int]:
     return month_idx, counts, scanned
 
 
-def _run_q1_pool(year: int, workers: int, ceiling_mb: float):
+def _run_q1_pool(year: int, workers: int, ceiling_mb: float, pool=None, progress=None):
     index = planner.load_index()
     selected, prune = planner.select_partitions(index, months=_months_of(year))
     jobs = [
         (str(REPO_ROOT / e["path"]), int(e["month"][5:7]) - 1) for e in selected
     ]
     partials, stats = _run_pool(
-        _q1_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+        _q1_partial, jobs, workers, ceiling_mb,
+        est_rows=prune["rows_selected"], pool=pool, progress=progress,
     )
     counts = np.zeros((MONTHS, ZONE_RANGE), dtype=np.int64)
     scanned = 0
@@ -356,7 +394,7 @@ def _q4_partial(job) -> tuple[str, np.ndarray, np.ndarray, int]:
     return borough, table[0], table[1], scanned
 
 
-def run_q4(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB):
+def run_q4(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAULT_CEILING_MB, pool=None, progress=None):
     """Benchmark Query 4: exact fare percentiles (p50/p90/p99) per
     pickup borough, via the locked hybrid sparse-table design.
     Every partition of the year is read (percentiles are holistic —
@@ -367,7 +405,8 @@ def run_q4(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
     selected, prune = planner.select_partitions(index, months=_months_of(year))
     jobs = [(str(REPO_ROOT / e["path"]), e["borough"]) for e in selected]
     partials, stats = _run_pool(
-        _q4_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+        _q4_partial, jobs, workers, ceiling_mb,
+        est_rows=prune["rows_selected"], pool=pool, progress=progress,
     )
     by_borough: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     scanned = 0

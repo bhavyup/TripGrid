@@ -1,0 +1,76 @@
+"""API tests (M4): meta, the pruning plan, a full query job over
+HTTP, the result cache answering the second time, the SSE progress
+stream, and error handling. Uses one real (small) query per test so
+the whole file stays fast.
+"""
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from api.app import app
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:
+        yield c
+
+
+def _wait_done(client, job_id, timeout_s=60):
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        body = client.get(f"/api/jobs/{job_id}").json()
+        if body["status"] in ("done", "error"):
+            return body
+        time.sleep(0.2)
+    raise AssertionError("job did not finish in time")
+
+
+def test_meta(client):
+    body = client.get("/api/meta").json()
+    assert body["years"] == [2024, 2025]
+    assert body["total_rows"] == 89_891_688
+    assert body["partitions"] == 192
+    assert body["cache"]["budget_bytes"] == 128 * 1024 * 1024
+
+
+def test_plan_shows_pruning(client):
+    body = client.get("/api/plan", params={"query": "q3", "year": 2024}).json()
+    selected = [p for p in body["partitions"] if p["selected"]]
+    assert len(selected) == 12
+    assert all(p["borough"] == "Manhattan" for p in selected)
+    assert body["stats"]["partitions_pruned"] > 0
+
+
+def test_query_flow_and_cache(client):
+    started = client.post("/api/query", json={"query": "q2", "year": 2025}).json()
+    assert started["cached"] is False
+    body = _wait_done(client, started["job_id"])
+    assert body["status"] == "done"
+    assert body["stats"]["under_ceiling"] is True
+    assert any(r["payment_type"] == 1 for r in body["result"]["rows"])
+    again = client.post("/api/query", json={"query": "q2", "year": 2025}).json()
+    assert again["cached"] is True
+    assert again["result"]["rows"] == body["result"]["rows"]
+
+
+def test_events_stream_progress_then_done(client):
+    started = client.post("/api/query", json={"query": "q3", "year": 2024}).json()
+    assert started["cached"] is False
+    seen = []
+    with client.stream("GET", f"/api/jobs/{started['job_id']}/events") as resp:
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        for line in resp.iter_lines():
+            if line.startswith("data:"):
+                seen.append(line)
+            if '"done"' in line:
+                break
+    assert seen, "no SSE events received"
+    assert '"done"' in seen[-1]
+
+
+def test_errors(client):
+    assert client.post("/api/query", json={"query": "q9", "year": 2024}).status_code == 400
+    assert client.post("/api/query", json={"query": "q1", "year": 1999}).status_code == 400
+    assert client.get("/api/jobs/nope").status_code == 404
