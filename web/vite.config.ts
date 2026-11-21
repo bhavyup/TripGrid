@@ -7,5 +7,10 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8000",
     },
+    // The repo often sits on the Windows drive (WSL /mnt),
+    // where native file-change events are unreliable — poll.
+    watch: {
+      usePolling: true,
+    },
   },
 });
