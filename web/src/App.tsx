@@ -198,7 +198,8 @@ export default function App() {
             {plan && (
               <p className="runstatus" style={{ color: "var(--bone-faint)" }}>
                 Plan — reads {plan.stats.partitions_selected} of {plan.stats.partitions_total}{" "}
-                files · skips {fmt(plan.stats.rows_pruned)} rows without opening them
+                files · skips {fmt(plan.stats.rows_total - plan.stats.rows_selected)} rows
+                without opening them
               </p>
             )}
           </div>

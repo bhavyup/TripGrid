@@ -30,7 +30,8 @@ export interface PlanStats {
   partitions_pruned: number;
   rows_total: number;
   rows_selected: number;
-  rows_pruned: number;
+  // Note: the planner reports rows_total and rows_selected only;
+  // rows pruned is derived (total - selected), never a field.
 }
 
 export interface Plan {

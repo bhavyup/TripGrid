@@ -29,7 +29,10 @@ interface Props {
 
 export default function Benchmarks({ suites }: Props) {
   const years = Object.keys(suites).sort();
-  const [year, setYear] = useState(years[years.length - 1] ?? "");
+  const [picked, setYear] = useState("");
+  // The suites arrive after first render, so the picked year must
+  // fall back to the latest available until the user chooses one.
+  const year = picked && suites[picked] ? picked : (years[years.length - 1] ?? "");
   const suite = suites[year];
   if (!suite) {
     return <p className="bnote">Benchmark results have not been generated on this machine yet.</p>;
