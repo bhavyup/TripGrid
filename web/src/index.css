@@ -951,6 +951,13 @@ section {
   margin-bottom: 4px;
 }
 
+.headtags {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .livemeta {
   font-family: var(--mono);
   font-size: 10px;
@@ -959,7 +966,6 @@ section {
   border: 1px solid var(--line);
   color: var(--bone-dim);
   padding: 3px 8px;
-  margin-left: auto;
   white-space: nowrap;
 }
 

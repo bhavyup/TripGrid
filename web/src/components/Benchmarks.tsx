@@ -17,6 +17,14 @@ const NOTES: Record<string, string> = {
   q4: "The reason TripGrid exists. Exact percentiles from sparse fare tables, nothing sorted, nothing approximated — while DuckDB sorts the year in memory and breaks the 2 GB ceiling doing it.",
 };
 
+/** The one-line "why" per question, reused by the live notes. */
+const WHY: Record<string, string> = {
+  q1: "Two counting passes over packed integer keys leave a C++ engine nothing to beat here",
+  q2: "On a small, heavily filtered scan, DuckDB's C++ vectorised reader beats Python orchestration",
+  q3: "Most of a year's rides start in Manhattan, so pruning can only soften this scan, not skip it",
+  q4: "Exact percentiles come from sparse fare tables, nothing sorted, nothing approximated — DuckDB has to sort the year in memory to answer at all",
+};
+
 const ENGINES: { id: string; label: string; us?: boolean }[] = [
   { id: "tripgrid", label: "TripGrid", us: true },
   { id: "duckdb", label: "DuckDB" },
@@ -24,6 +32,16 @@ const ENGINES: { id: string; label: string; us?: boolean }[] = [
 ];
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** One engine's line in a chart. Undefined numbers render as an
+ * empty bar and an em dash — a run that hasn't happened yet. */
+interface Row {
+  id: string;
+  label: string;
+  us?: boolean;
+  wall?: number;
+  peak?: number;
+}
 
 interface Props {
   suites: Record<string, BenchSuite>;
@@ -66,23 +84,79 @@ export default function Benchmarks({ suites, live, onShowLive }: Props) {
       </div>
 
       {mode === "cold" ? (
-        <ColdView suite={suite} year={year} suites={suites} />
+        <ColdView suite={suite} />
       ) : (
-        <LiveView runs={live[year] ?? {}} year={year} />
+        <LiveView suite={suite} runs={live[year] ?? {}} />
       )}
     </div>
   );
 }
 
-function ColdView({
-  suite,
-  year,
-  suites,
-}: {
-  suite: BenchSuite | undefined;
-  year: string;
-  suites: Record<string, BenchSuite>;
-}) {
+function Charts({ rows }: { rows: Row[] }) {
+  const walls = rows.map((r) => r.wall).filter((v): v is number => v !== undefined);
+  const peaks = rows.map((r) => r.peak).filter((v): v is number => v !== undefined);
+  const maxTime = walls.length ? Math.max(...walls) : 1;
+  const maxMem = Math.max(CEILING, ...peaks) * 1.06;
+  return (
+    <div className="bcharts">
+      <div className="bchart">
+        <span className="label">Wall time — seconds, lower wins</span>
+        {rows.map((r) => (
+          <div className={`brow${r.us ? " us" : ""}`} key={r.id}>
+            <div className="eng">{r.label}</div>
+            <div className="track">
+              <div
+                className="fill"
+                style={{ width: r.wall !== undefined ? `${(r.wall / maxTime) * 100}%` : "0%" }}
+              />
+            </div>
+            <div className="val">{r.wall !== undefined ? `${r.wall.toFixed(2)}s` : "—"}</div>
+          </div>
+        ))}
+      </div>
+      <div className="bchart">
+        <span className="label">Peak memory — MB, ceiling 2,048</span>
+        {rows.map((r) => {
+          const over = r.peak !== undefined && r.peak > CEILING;
+          return (
+            <div className={`brow${r.us ? " us" : ""}`} key={r.id}>
+              <div className="eng">{r.label}</div>
+              <div className="track">
+                <div
+                  className={`fill${over ? " over" : ""}`}
+                  style={{ width: r.peak !== undefined ? `${(r.peak / maxMem) * 100}%` : "0%" }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -3,
+                    bottom: -3,
+                    width: 1,
+                    background: "var(--bone)",
+                    opacity: 0.6,
+                    left: `${(CEILING / maxMem) * 100}%`,
+                  }}
+                />
+              </div>
+              <div className="val">
+                {r.peak !== undefined ? (
+                  <>
+                    {Math.round(r.peak).toLocaleString("en-US")}
+                    {over && <span className="over-tag">Over ceiling</span>}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ColdView({ suite }: { suite: BenchSuite | undefined }) {
   if (!suite) {
     return <p className="bnote">Benchmark results have not been generated on this machine yet.</p>;
   }
@@ -93,76 +167,33 @@ function ColdView({
         machine. The fair race.
       </p>
       {["q1", "q2", "q3", "q4"].map((q) => {
-        const runs = ENGINES.map((e) => suites[year].runs[`${e.id}/${q}`]).filter(Boolean);
-        if (runs.length === 0) return null;
-        const maxTime = Math.max(...runs.map((r) => r.wall_seconds));
-        const maxMem = Math.max(CEILING, ...runs.map((r) => r.peak_rss_mb)) * 1.06;
-        const gate = suites[year].gates_vs_duckdb[`tripgrid/${q}`];
+        const rows: Row[] = ENGINES.map((e) => {
+          const run = suite.runs[`${e.id}/${q}`];
+          return {
+            id: e.id,
+            label: e.label,
+            us: e.us,
+            wall: run?.wall_seconds,
+            peak: run?.peak_rss_mb,
+          };
+        });
+        if (rows.every((r) => r.wall === undefined)) return null;
+        const gate = suite.gates_vs_duckdb[`tripgrid/${q}`];
         return (
           <div className="bquery" key={q}>
             <div className="bquery-head">
               <span className="bq">{q.toUpperCase()}</span>
               <h3>{QUERY_TITLES[q]}</h3>
-              {gate !== undefined && (
-                <span className="gate">DuckDB correctness gate — {gate ? "Pass" : "Fail"}</span>
-              )}
+              <span className="headtags">
+                {gate !== undefined && (
+                  <span className="gate">
+                    DuckDB correctness gate — {gate ? "Pass" : "Fail"}
+                  </span>
+                )}
+              </span>
             </div>
             <p className="bnote">{NOTES[q]}</p>
-            <div className="bcharts">
-              <div className="bchart">
-                <span className="label">Wall time — seconds, lower wins</span>
-                {ENGINES.map((e) => {
-                  const run = suites[year].runs[`${e.id}/${q}`];
-                  if (!run) return null;
-                  return (
-                    <div className={`brow${e.us ? " us" : ""}`} key={e.id}>
-                      <div className="eng">{e.label}</div>
-                      <div className="track">
-                        <div
-                          className="fill"
-                          style={{ width: `${(run.wall_seconds / maxTime) * 100}%` }}
-                        />
-                      </div>
-                      <div className="val">{run.wall_seconds.toFixed(2)}s</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="bchart">
-                <span className="label">Peak memory — MB, ceiling 2,048</span>
-                {ENGINES.map((e) => {
-                  const run = suites[year].runs[`${e.id}/${q}`];
-                  if (!run) return null;
-                  const over = run.peak_rss_mb > CEILING;
-                  return (
-                    <div className={`brow${e.us ? " us" : ""}`} key={e.id}>
-                      <div className="eng">{e.label}</div>
-                      <div className="track">
-                        <div
-                          className={`fill${over ? " over" : ""}`}
-                          style={{ width: `${(run.peak_rss_mb / maxMem) * 100}%` }}
-                        />
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: -3,
-                            bottom: -3,
-                            width: 1,
-                            background: "var(--bone)",
-                            opacity: 0.6,
-                            left: `${(CEILING / maxMem) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="val">
-                        {Math.round(run.peak_rss_mb).toLocaleString("en-US")}
-                        {over && <span className="over-tag">Over ceiling</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <Charts rows={rows} />
           </div>
         );
       })}
@@ -170,84 +201,103 @@ function ColdView({
   );
 }
 
-function LiveView({ runs, year }: { runs: Record<string, LiveRun>; year: string }) {
-  const present = ["q1", "q2", "q3", "q4"].filter((q) => runs[q]);
+/** Who won the live comparison, why, and what the warm server
+ * did to the number — written from the actual figures. */
+function liveNote(
+  q: string,
+  live: LiveRun | undefined,
+  tgCold: number | undefined,
+  ddCold: number | undefined,
+): string {
+  if (!live) {
+    return "Not run live yet — DuckDB and pandas are showing their cold times as the reference. Run this question in the console and TripGrid's line fills in with its warm-server time.";
+  }
+  if (tgCold === undefined || ddCold === undefined) return NOTES[q];
+  const tg = live.wall_seconds.toFixed(2);
+  const gap =
+    live.wall_seconds < tgCold
+      ? `The warm server shaved it from ${tgCold.toFixed(2)}s cold to ${tg}s`
+      : `This run came in slower than TripGrid's own ${tgCold.toFixed(2)}s cold time — a single live run carries the machine's mood with it`;
+  const scanned = `It scanned ${fmt(live.rows_scanned)} rows in ${live.files_read} files.`;
+  if (live.wall_seconds < ddCold) {
+    return `On the warm server, TripGrid takes this one — ${tg}s live against DuckDB's cold ${ddCold.toFixed(2)}s. ${WHY[q]}. ${gap}, though the cold race stays the fair comparison. ${scanned}`;
+  }
+  return `DuckDB keeps this one even against the warm server — ${ddCold.toFixed(2)}s cold against TripGrid's ${tg}s live. ${WHY[q]}. ${gap}. ${scanned}`;
+}
+
+function LiveView({
+  suite,
+  runs,
+}: {
+  suite: BenchSuite | undefined;
+  runs: Record<string, LiveRun>;
+}) {
+  if (!suite) {
+    return <p className="bnote">Benchmark results have not been generated on this machine yet.</p>;
+  }
   return (
     <div>
       <p className="bnote mode-note">
-        Live — real runs on this warm server, recorded as they happen. Peak memory is the
-        whole server&rsquo;s, not the engine alone, and answers served from the cache
-        don&rsquo;t count — only genuine executions land here.
+        Live — the same charts, but TripGrid&rsquo;s line is the latest real run on this
+        warm server. DuckDB and pandas keep their cold times as the reference, peak
+        memory for a live run is the whole server&rsquo;s, and answers served from the
+        cache don&rsquo;t count — only genuine executions land here.
       </p>
-      {present.length === 0 && (
-        <p className="bnote">
-          No live runs for {year} yet. Run a question in the console above and it appears
-          here the moment it finishes.
-        </p>
-      )}
-      {present.map((q) => {
-        const run = runs[q];
-        const maxTime = Math.max(...present.map((k) => runs[k].wall_seconds));
-        const maxMem = Math.max(CEILING, run.peak_rss_mb) * 1.06;
-        const over = run.peak_rss_mb > CEILING;
-        const when = new Date(run.last_run_at).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
+      {["q1", "q2", "q3", "q4"].map((q) => {
+        const live = runs[q];
+        const rows: Row[] = ENGINES.map((e) => {
+          if (e.id === "tripgrid") {
+            return {
+              id: e.id,
+              label: e.label,
+              us: e.us,
+              wall: live?.wall_seconds,
+              peak: live?.peak_rss_mb,
+            };
+          }
+          const run = suite.runs[`${e.id}/${q}`];
+          return {
+            id: e.id,
+            label: e.label,
+            us: e.us,
+            wall: run?.wall_seconds,
+            peak: run?.peak_rss_mb,
+          };
         });
+        const gate = suite.gates_vs_duckdb[`tripgrid/${q}`];
+        const when =
+          live &&
+          new Date(live.last_run_at).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
         return (
           <div className="bquery" key={q}>
             <div className="bquery-head">
               <span className="bq">{q.toUpperCase()}</span>
               <h3>{QUERY_TITLES[q]}</h3>
-              <span className="livemeta">
-                {run.runs} live run{run.runs === 1 ? "" : "s"} · latest {when}
+              <span className="headtags">
+                {live && (
+                  <span className="livemeta">
+                    {live.runs} live run{live.runs === 1 ? "" : "s"} · latest {when}
+                  </span>
+                )}
+                {gate !== undefined && (
+                  <span className="gate">
+                    DuckDB correctness gate — {gate ? "Pass" : "Fail"}
+                  </span>
+                )}
               </span>
             </div>
             <p className="bnote">
-              Latest run scanned {fmt(run.rows_scanned)} rows in {run.files_read} files.
+              {liveNote(
+                q,
+                live,
+                suite.runs[`tripgrid/${q}`]?.wall_seconds,
+                suite.runs[`duckdb/${q}`]?.wall_seconds,
+              )}
             </p>
-            <div className="bcharts">
-              <div className="bchart">
-                <span className="label">Wall time — seconds, lower wins</span>
-                <div className="brow us">
-                  <div className="eng">TripGrid</div>
-                  <div className="track">
-                    <div
-                      className="fill"
-                      style={{ width: `${(run.wall_seconds / maxTime) * 100}%` }}
-                    />
-                  </div>
-                  <div className="val">{run.wall_seconds.toFixed(2)}s</div>
-                </div>
-              </div>
-              <div className="bchart">
-                <span className="label">Peak memory — MB, ceiling 2,048</span>
-                <div className="brow us">
-                  <div className="eng">TripGrid</div>
-                  <div className="track">
-                    <div
-                      className={`fill${over ? " over" : ""}`}
-                      style={{ width: `${(run.peak_rss_mb / maxMem) * 100}%` }}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: -3,
-                        bottom: -3,
-                        width: 1,
-                        background: "var(--bone)",
-                        opacity: 0.6,
-                        left: `${(CEILING / maxMem) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="val">
-                    {Math.round(run.peak_rss_mb).toLocaleString("en-US")}
-                    {over && <span className="over-tag">Over ceiling</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <Charts rows={rows} />
           </div>
         );
       })}
