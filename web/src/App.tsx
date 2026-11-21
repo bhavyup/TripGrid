@@ -109,7 +109,9 @@ export default function App() {
           <h1 className="display">
             Ninety million
             <br />
-            trips. <span className="serif-i">two gigabytes,</span>
+            trips.
+            <br />
+            <span className="serif-i">2 GB,</span>
             <br />
             <span className="amber">zero</span> approximation.
           </h1>
