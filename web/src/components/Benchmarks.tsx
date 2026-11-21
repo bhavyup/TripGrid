@@ -13,9 +13,12 @@ const QUERY_TITLES: Record<string, string> = {
 /* The four explanations under Cold. To force a line to end at an
  * exact spot, put \n there — the page breaks exactly where the \n
  * sits, nowhere else. These notes print at full section width
- * (.bnote.lines), so a hand-set line stays on one line. */
+ * (.bnote.lines), so a hand-set line stays on one line.
+ * Inline formatting, same idea — wrap the words in markers:
+ * **word** bold, *word* serif italic, __word__ underlined.
+ * One style per word; markers don't nest. */
 const NOTES: Record<string, string> = {
-  q1: "TripGrid leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table —\nso a C++ engine has nothing to beat it with here.",
+  q1: "TripGrid leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table \nA C++ engine has nothing to beat it with here.",
   q2: "DuckDB leads, and this page says so. On a small, heavily filtered scan its C++ vectorised reader beats Python orchestration. TripGrid's answer is still exact and still under a third of the ceiling.",
   q3: "DuckDB leads again. Most of a year's rides start in Manhattan, so pruning can only soften this scan, not skip it — the honest cost of a row-at-a-time filter in Python.",
   q4: "The reason TripGrid exists. Exact percentiles from sparse fare tables, nothing sorted, nothing approximated — while DuckDB sorts the year in memory and breaks the 2 GB ceiling doing it.",
@@ -37,6 +40,37 @@ const ENGINES: { id: string; label: string }[] = [
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
+/** One line of note text with its inline formatting applied:
+ * **bold**, *serif italic*, __underlined__. */
+function richLine(line: string, keyBase: string) {
+  const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__)/g);
+  return parts.map((p, i) => {
+    const k = `${keyBase}-${i}`;
+    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) {
+      return (
+        <strong className="nbold" key={k}>
+          {p.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (p.length > 4 && p.startsWith("__") && p.endsWith("__")) {
+      return (
+        <span className="nunder" key={k}>
+          {p.slice(2, -2)}
+        </span>
+      );
+    }
+    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) {
+      return (
+        <em className="nital" key={k}>
+          {p.slice(1, -1)}
+        </em>
+      );
+    }
+    return p;
+  });
+}
+
 /** Renders note text with hard line breaks: every \n in the
  * string becomes the start of a new printed line. */
 function NoteText({ text }: { text: string }) {
@@ -44,7 +78,7 @@ function NoteText({ text }: { text: string }) {
     <>
       {text.split("\n").map((line, i) => (
         <span className="nline" key={i}>
-          {line}
+          {richLine(line, `l${i}`)}
         </span>
       ))}
     </>
