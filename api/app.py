@@ -159,6 +159,8 @@ def _run_engine(query: str, year: int, pool, progress) -> dict:
     else:
         rows, stats = executor.run_q4(year, **kw)
         result = {"rows": rows}
+    # Pool jobs are one file each, so files read == partitions selected.
+    stats = {**stats, "files_read": stats["partitions_selected"]}
     return {"result": result, "stats": stats}
 
 
@@ -192,9 +194,15 @@ class QueryRequest(BaseModel):
     year: int
 
 
-@app.get("/")
-def root():
-    return {"name": "TripGrid API", "docs": "/docs", "meta": "/api/meta"}
+@app.get("/api/health")
+def health():
+    return {"ok": True, "name": "TripGrid API"}
+
+
+@app.get("/api/zones")
+def zones_list():
+    """id -> {borough, zone} for the frontend's result views."""
+    return {str(i): z for i, z in zones.load_zones().items()}
 
 
 @app.get("/api/meta")
@@ -291,6 +299,16 @@ def benchmarks():
         if path.exists():
             out[str(year)] = json.loads(path.read_text(encoding="utf-8"))
     return out
+
+
+# The built frontend (web/dist) is served by this same process when
+# it exists, so the whole product ships as one server. API routes
+# above are registered first and always win over the static mount.
+_DIST = REPO_ROOT / "web" / "dist"
+if _DIST.exists():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="static")
 
 
 if __name__ == "__main__":
