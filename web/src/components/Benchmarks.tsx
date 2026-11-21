@@ -278,16 +278,15 @@ function liveNote(
   }
   if (tgCold === undefined || ddCold === undefined) return NOTES[q];
   const tg = live.wall_seconds.toFixed(2);
-  const nameTG = "TripGrid"; 
   const gap =
     live.wall_seconds < tgCold
-      ? `The warm server shaved it from ${tgCold.toFixed(2)}s cold to ${tg}s`
-      : `This run came in slower than TripGrid's own ${tgCold.toFixed(2)}s cold time — a single live run carries the machine's mood with it`;
+      ? `shaving itself from ${tgCold.toFixed(2)}s cold to ${tg}s warm`
+      : `this run came in slower than TripGrid's own ${tgCold.toFixed(2)}s cold time.`;
   const scanned = `It scanned ${fmt(live.rows_scanned)} rows in ${live.files_read} files.`;
   if (live.wall_seconds < ddCold) {
-    return `On the warm server, __${nameTG}__ takes this one — ${tg}s live against DuckDB's cold ${ddCold.toFixed(2)}s. ${WHY[q]}. ${gap}, though the cold race stays the fair comparison. ${scanned}`;
+    return `On the warm server, __TripGrid__ takes this one — ${tg}s live against DuckDB's cold ${ddCold.toFixed(2)}s, ${gap}. \n ${WHY[q]}.\n ${scanned}`;
   }
-  return `__DuckDB__ keeps this one even against the warm server — ${ddCold.toFixed(2)}s cold against TripGrid's ${tg}s live. ${WHY[q]}. ${gap}. ${scanned}`;
+  return `__DuckDB__ keeps this one even against the warm server — ${ddCold.toFixed(2)}s cold against TripGrid's ${tg}s live, though ${gap}\n ${WHY[q]}. ${scanned}`;
 }
 
 function LiveView({

@@ -730,7 +730,7 @@ section {
   max-height: 517px;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 @keyframes rise {
