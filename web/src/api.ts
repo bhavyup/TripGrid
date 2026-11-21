@@ -106,6 +106,18 @@ export interface BenchSuite {
   gates_vs_duckdb: Record<string, boolean>;
 }
 
+/** One real console run, recorded by the server. Only genuine
+ * executions land here — cache answers never do. */
+export interface LiveRun {
+  wall_seconds: number;
+  peak_rss_mb: number;
+  rows_scanned: number;
+  files_read: number;
+  partitions_selected: number;
+  runs: number;
+  last_run_at: string;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`${url} -> ${resp.status}`);
@@ -116,6 +128,8 @@ export const fetchMeta = () => getJson<Meta>("/api/meta");
 export const fetchZones = () => getJson<ZoneMap>("/api/zones");
 export const fetchBenchmarks = () =>
   getJson<Record<string, BenchSuite>>("/api/benchmarks");
+export const fetchLive = () =>
+  getJson<Record<string, Record<string, LiveRun>>>("/api/live");
 export const fetchPlan = (query: string, year: number) =>
   getJson<Plan>(`/api/plan?query=${query}&year=${year}`);
 

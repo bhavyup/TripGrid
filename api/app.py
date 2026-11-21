@@ -19,6 +19,9 @@ Endpoints:
   GET  /api/jobs/{id}            job status / result
   GET  /api/jobs/{id}/events     live progress (Server-Sent Events)
   GET  /api/benchmarks           the latest suite results, if present
+  GET  /api/live                 real console runs this session,
+                                 latest per query+year (cache hits
+                                 are not runs and are never recorded)
 """
 from __future__ import annotations
 
@@ -29,6 +32,7 @@ import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -115,6 +119,7 @@ async def lifespan(app: FastAPI):
     STATE["semaphore"] = asyncio.Semaphore(1)
     STATE["cache"] = ResultCache(CACHE_BUDGET_BYTES)
     STATE["jobs"] = {}
+    STATE["live"] = {}  # (year, query) -> latest real run's record
     yield
     STATE["pool"].shutdown(wait=False)
 
@@ -182,6 +187,22 @@ async def _run_job(job: Job) -> None:
             job.payload = payload
             job.status = "done"
             STATE["cache"].put(f"{job.query}:{job.year}", payload)
+            # Record the run for the Evidence section's Live view.
+            # This is the only place runs are recorded, and cache
+            # hits never reach it — they return inside start_query —
+            # so a "live run" always means the engine really ran.
+            stats = payload["stats"]
+            key = (job.year, job.query)
+            prev = STATE["live"].get(key)
+            STATE["live"][key] = {
+                "wall_seconds": stats["wall_seconds"],
+                "peak_rss_mb": stats["peak_rss_mb"],
+                "rows_scanned": stats["rows_scanned"],
+                "files_read": stats["files_read"],
+                "partitions_selected": stats["partitions_selected"],
+                "runs": (prev["runs"] + 1) if prev else 1,
+                "last_run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
             job.queue.put_nowait({"type": "done"})
         except Exception as exc:  # surfaced to the client, never swallowed
             job.status = "error"
@@ -298,6 +319,16 @@ def benchmarks():
         path = REPO_ROOT / "bench" / "results" / f"suite_{year}.json"
         if path.exists():
             out[str(year)] = json.loads(path.read_text(encoding="utf-8"))
+    return out
+
+
+@app.get("/api/live")
+def live():
+    """Latest real run per query+year, recorded this server
+    session. A query with no real run yet is simply absent."""
+    out: dict = {}
+    for (year, query), rec in STATE["live"].items():
+        out.setdefault(str(year), {})[query] = rec
     return out
 
 

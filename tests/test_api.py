@@ -70,6 +70,32 @@ def test_events_stream_progress_then_done(client):
     assert '"done"' in seen[-1]
 
 
+def test_live_records_only_real_runs(client):
+    # q2/2024 is exercised by no other test in this module, so its
+    # live record starts absent and every step below is exact.
+    before = client.get("/api/live").json()
+    assert "q2" not in before.get("2024", {})
+
+    started = client.post("/api/query", json={"query": "q2", "year": 2024}).json()
+    assert started["cached"] is False
+    body = _wait_done(client, started["job_id"])
+    assert body["status"] == "done"
+
+    live = client.get("/api/live").json()
+    rec = live["2024"]["q2"]
+    assert rec["runs"] == 1
+    assert rec["wall_seconds"] > 0
+    assert rec["rows_scanned"] == body["stats"]["rows_scanned"] == 3_892_990
+    assert rec["files_read"] == 24
+
+    # A cache hit is not a run: the record must not move.
+    again = client.post("/api/query", json={"query": "q2", "year": 2024}).json()
+    assert again["cached"] is True
+    live = client.get("/api/live").json()
+    assert live["2024"]["q2"]["runs"] == 1
+    assert live["2024"]["q2"]["wall_seconds"] == rec["wall_seconds"]
+
+
 def test_errors(client):
     assert client.post("/api/query", json={"query": "q9", "year": 2024}).status_code == 400
     assert client.post("/api/query", json={"query": "q1", "year": 1999}).status_code == 400

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchBenchmarks,
+  fetchLive,
   fetchMeta,
   fetchPlan,
   fetchZones,
   runQuery,
   type BenchSuite,
   type JobPayload,
+  type LiveRun,
   type Meta,
   type Plan,
   type ZoneMap,
@@ -21,6 +23,7 @@ export default function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [zones, setZones] = useState<ZoneMap>({});
   const [suites, setSuites] = useState<Record<string, BenchSuite>>({});
+  const [live, setLive] = useState<Record<string, Record<string, LiveRun>>>({});
   const [query, setQuery] = useState("q3");
   const [year, setYear] = useState(2025);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -30,11 +33,16 @@ export default function App() {
   const [payload, setPayload] = useState<JobPayload | null>(null);
   const cacheRef = useRef(new Map<string, JobPayload>());
 
+  const refreshLive = useCallback(() => {
+    fetchLive().then(setLive).catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     fetchMeta().then(setMeta).catch(() => undefined);
     fetchZones().then(setZones).catch(() => undefined);
     fetchBenchmarks().then(setSuites).catch(() => undefined);
-  }, []);
+    refreshLive();
+  }, [refreshLive]);
 
   useEffect(() => {
     let live = true;
@@ -68,6 +76,10 @@ export default function App() {
       const result = await runQuery(query, year, (done) => setFilesDone(done));
       cacheRef.current.set(`${query}:${year}`, result);
       setPayload(result);
+      // A real execution just landed on the server — pull the
+      // updated live record for the Evidence section. Cache
+      // answers change nothing there.
+      if (!result.cached) refreshLive();
       setFilesDone(result.stats.files_read ?? 0);
       setStatus(
         result.cached
@@ -79,7 +91,7 @@ export default function App() {
     } finally {
       setRunning(false);
     }
-  }, [query, year, running]);
+  }, [query, year, running, refreshLive]);
 
   const stats = payload?.stats;
   const queries = meta?.queries ?? [];
@@ -274,7 +286,7 @@ export default function App() {
           <div className="rule" />
           <span className="tail">TripGrid vs DuckDB vs pandas — same files, same machine</span>
         </div>
-        <Benchmarks suites={suites} />
+        <Benchmarks suites={suites} live={live} onShowLive={refreshLive} />
       </section>
 
       {/* ---------- method ---------- */}

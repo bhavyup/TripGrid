@@ -930,12 +930,37 @@ section {
 
 /* ---------- benchmarks ---------- */
 
+.btabs-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .btabs {
   display: flex;
   gap: 0;
   border: 1px solid var(--line);
   width: fit-content;
   margin-bottom: 28px;
+}
+
+.mode-note {
+  margin-top: -6px;
+  margin-bottom: 4px;
+}
+
+.livemeta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid var(--line);
+  color: var(--bone-dim);
+  padding: 3px 8px;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .btabs button {
