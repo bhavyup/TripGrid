@@ -1,6 +1,8 @@
 data/raw/
 data/partitioned/
+data/quarantine/
 bench/results/
 __pycache__/
 .venv/
 *.pyc
+*.bak-*
