@@ -1,0 +1,6 @@
+data/raw/
+data/partitioned/
+bench/results/
+__pycache__/
+.venv/
+*.pyc
