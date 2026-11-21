@@ -47,6 +47,44 @@ body {
   color: #121110;
 }
 
+/* Marker highlight: a flat amber tape behind the word, ink text.
+   Used once, on "Memory" in the hero. */
+.hl {
+  background: var(--amber);
+  color: #171410;
+  padding: 0 0.14em 0.04em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Scrollbars: hairline-thin, warm taupe on nothing, amber on
+   hover. Square, like everything else here. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #454037 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #454037;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--amber-dim);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 button {
   font: inherit;
   color: inherit;
@@ -480,7 +518,7 @@ section {
 }
 
 .pgrid {
-  min-width: 640px;
+  min-width: 560px;
   padding: 16px 18px 18px;
   position: relative;
 }
@@ -570,9 +608,14 @@ section {
 
 /* ---------- run stats ---------- */
 
+.stage {
+  min-width: 0;
+  container-type: inline-size;
+}
+
 .runstats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid var(--line);
   border-top: none;
   background: var(--ground-2);
@@ -580,6 +623,41 @@ section {
 
 .runstats .stat {
   padding: 14px 18px 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The strip answers to its own box, not the window. As the
+   stage narrows the figures step down a size; at the tightest
+   width the strip wraps to a second row rather than letting
+   a value spill out of its cell. */
+@container (max-width: 760px) {
+  .runstats .stat {
+    padding: 12px 9px 11px;
+  }
+
+  .runstats .v {
+    font-size: 15.5px;
+  }
+}
+
+@container (max-width: 580px) {
+  .runstats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .runstats .v {
+    font-size: 16px;
+  }
+
+  .runstats .stat:nth-child(4) {
+    border-left: none;
+  }
+
+  .runstats .stat:nth-child(4),
+  .runstats .stat:nth-child(5) {
+    border-top: 1px solid var(--line-soft);
+  }
 }
 
 .runstats .stat + .stat {

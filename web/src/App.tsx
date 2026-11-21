@@ -111,7 +111,9 @@ export default function App() {
             <br />
             trips.
             <br />
-            <span className="serif-i">2 GB,</span>
+            <span className="serif-i">
+              2 GB <span className="hl">Memory</span>,
+            </span>
             <br />
             <span className="amber">zero</span> approximation.
           </h1>
@@ -206,7 +208,7 @@ export default function App() {
             )}
           </div>
 
-          <div>
+          <div className="stage">
             <PartitionGrid plan={plan} year={year} filesDone={filesDone} running={running} />
             <div className="runstats">
               <div className="stat">
