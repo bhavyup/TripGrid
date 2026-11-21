@@ -43,6 +43,34 @@ def group_mean(keys: np.ndarray, values: np.ndarray, size: int) -> np.ndarray:
     return out
 
 
+def weekday_of(datetimes: np.ndarray) -> np.ndarray:
+    """Day of week for naive datetimes, Monday=0 .. Sunday=6.
+
+    Pure arithmetic on the day count: the Unix epoch (1970-01-01)
+    was a Thursday, which is 3 in Monday-first numbering, hence +3.
+    """
+    days = datetimes.astype("datetime64[D]").astype(np.int64)
+    return (days + 3) % 7
+
+
+def hour_of(datetimes: np.ndarray) -> np.ndarray:
+    """Hour of day (0..23) for naive datetimes, from the hour count."""
+    return (datetimes.astype("datetime64[h]").astype(np.int64) % 24).astype(np.int64)
+
+
+def topk_indices(values: np.ndarray, k: int) -> np.ndarray:
+    """Indexes of the k largest values, largest first.
+
+    `np.argpartition` finds the top k in O(N) without sorting all N;
+    only the k winners are then sorted between themselves.
+    """
+    k = min(k, values.size)
+    if k == 0:
+        return np.empty(0, dtype=np.int64)
+    part = np.argpartition(-values, k - 1)[:k]
+    return part[np.argsort(-values[part])]
+
+
 def merge_partials(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Merge two partial count/sum vectors. This is just addition —
     the whole reason chunked execution gives the same answer as
