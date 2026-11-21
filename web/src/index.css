@@ -722,6 +722,17 @@ section {
   animation: rise 0.45s ease both;
 }
 
+/* Every answer gets the same stage height — exactly Q4's
+   eight-borough table, 517px as rendered (header + 8 rows).
+   Answers taller than that (Q3's twenty rows, Q1's top ten)
+   scroll inside this box instead of stretching the page. */
+.resultscroll {
+  max-height: 517px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -1049,7 +1060,7 @@ section {
 .bnote {
   color: var(--bone-dim);
   font-size: 13.5px;
-  max-width: 900px;
+  max-width: 1000px;
   line-height: 1.55;
 }
 

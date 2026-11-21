@@ -279,7 +279,9 @@ export default function App() {
                   <h3>{activeQuery.title}</h3>
                   {payload.cached && <span className="fromcache">From memory</span>}
                 </div>
-                <Results payload={payload} zones={zones} />
+                <div className="resultscroll">
+                  <Results payload={payload} zones={zones} />
+                </div>
               </div>
             )}
           </div>
