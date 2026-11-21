@@ -112,10 +112,10 @@ export default function App() {
             trips.
             <br />
             <span className="serif-i">
-              2 GB <span className="hl">Memory</span>,
+              2 GB <span className="amber">Memory</span>,
             </span>
             <br />
-            <span className="amber">zero</span> approximation.
+            <span className="hl">zero</span> approximation.
           </h1>
           <aside className="hero-side">
             <span className="label">What this is</span>

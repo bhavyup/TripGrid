@@ -48,7 +48,7 @@ body {
 }
 
 /* Marker highlight: a flat amber tape behind the word, ink text.
-   Used once, on "Memory" in the hero. */
+   Used once, on "zero" in the hero. */
 .hl {
   background: var(--amber);
   color: #171410;
