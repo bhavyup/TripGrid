@@ -18,10 +18,10 @@ const QUERY_TITLES: Record<string, string> = {
  * **word** bold, *word* serif italic, __word__ underlined.
  * One style per word; markers don't nest. */
 const NOTES: Record<string, string> = {
-  q1: "TripGrid leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table \nA C++ engine has nothing to beat it with here.",
-  q2: "DuckDB leads, and this page says so. On a small, heavily filtered scan its C++ vectorised reader beats Python orchestration. TripGrid's answer is still exact and still under a third of the ceiling.",
-  q3: "DuckDB leads again. Most of a year's rides start in Manhattan, so pruning can only soften this scan, not skip it — the honest cost of a row-at-a-time filter in Python.",
-  q4: "The reason TripGrid exists. Exact percentiles from sparse fare tables, nothing sorted, nothing approximated — while DuckDB sorts the year in memory and breaks the 2 GB ceiling doing it.",
+  q1: "__TripGrid__ leads. The whole group-by is two counting passes over packed integer keys — no sorting, no hash table. \nA C++ engine has nothing to beat it with here.",
+  q2: "__DuckDB__ leads. On a small, heavily filtered scan its C++ vectorised reader beats Python orchestration. TripGrid's answer is still exact and still under a third of the ceiling.",
+  q3: "__DuckDB__ leads again. Most of a year's rides start in Manhattan, so pruning can only soften this scan, not skip it.",
+  q4: "The reason __TripGrid__ exists. Exact percentiles from sparse fare tables, nothing sorted, nothing approximated. \nDuckDB sorts the year in memory and breaks the 2 GB ceiling doing it.",
 };
 
 /** The one-line "why" per question, reused by the live notes. */
@@ -264,7 +264,9 @@ function ColdView({ suite }: { suite: BenchSuite | undefined }) {
 }
 
 /** Who won the live comparison, why, and what the warm server
- * did to the number — written from the actual figures. */
+ * did to the number — written from the actual figures. The text
+ * is rendered through NoteText, so the ** / * / __ markers work
+ * here exactly like in the Cold notes. */
 function liveNote(
   q: string,
   live: LiveRun | undefined,
@@ -272,19 +274,20 @@ function liveNote(
   ddCold: number | undefined,
 ): string {
   if (!live) {
-    return "Not run live yet — DuckDB and pandas are showing their cold times as the reference. Run this question in the console and TripGrid's line fills in with its warm-server time.";
+    return "Not run live yet — Cold time references only. Run this question in the console first.";
   }
   if (tgCold === undefined || ddCold === undefined) return NOTES[q];
   const tg = live.wall_seconds.toFixed(2);
+  const nameTG = "TripGrid"; 
   const gap =
     live.wall_seconds < tgCold
       ? `The warm server shaved it from ${tgCold.toFixed(2)}s cold to ${tg}s`
       : `This run came in slower than TripGrid's own ${tgCold.toFixed(2)}s cold time — a single live run carries the machine's mood with it`;
   const scanned = `It scanned ${fmt(live.rows_scanned)} rows in ${live.files_read} files.`;
   if (live.wall_seconds < ddCold) {
-    return `On the warm server, TripGrid takes this one — ${tg}s live against DuckDB's cold ${ddCold.toFixed(2)}s. ${WHY[q]}. ${gap}, though the cold race stays the fair comparison. ${scanned}`;
+    return `On the warm server, __${nameTG}__ takes this one — ${tg}s live against DuckDB's cold ${ddCold.toFixed(2)}s. ${WHY[q]}. ${gap}, though the cold race stays the fair comparison. ${scanned}`;
   }
-  return `DuckDB keeps this one even against the warm server — ${ddCold.toFixed(2)}s cold against TripGrid's ${tg}s live. ${WHY[q]}. ${gap}. ${scanned}`;
+  return `__DuckDB__ keeps this one even against the warm server — ${ddCold.toFixed(2)}s cold against TripGrid's ${tg}s live. ${WHY[q]}. ${gap}. ${scanned}`;
 }
 
 function LiveView({
@@ -300,10 +303,9 @@ function LiveView({
   return (
     <div>
       <p className="bnote mode-note">
-        Live — the same charts, but TripGrid&rsquo;s line is the latest real run on this
-        warm server. DuckDB and pandas keep their cold times as the reference, peak
+        Live — only genuine executions land here. <br></br>Peak
         memory for a live run is the whole server&rsquo;s, and answers served from the
-        cache don&rsquo;t count — only genuine executions land here.
+        cache don&rsquo;t count.
       </p>
       {["q1", "q2", "q3", "q4"].map((q) => {
         const live = runs[q];
@@ -350,12 +352,14 @@ function LiveView({
               </span>
             </div>
             <p className="bnote">
-              {liveNote(
-                q,
-                live,
-                suite.runs[`tripgrid/${q}`]?.wall_seconds,
-                suite.runs[`duckdb/${q}`]?.wall_seconds,
-              )}
+              <NoteText
+                text={liveNote(
+                  q,
+                  live,
+                  suite.runs[`tripgrid/${q}`]?.wall_seconds,
+                  suite.runs[`duckdb/${q}`]?.wall_seconds,
+                )}
+              />
             </p>
             <Charts rows={rows} />
           </div>
