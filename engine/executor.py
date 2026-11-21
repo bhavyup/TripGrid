@@ -261,6 +261,64 @@ def run_q3(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB, 
     return rows, stats
 
 
+# ---------------------------------------------------------------- M3
+
+from engine import percentile
+
+
+def _q4_partial(job) -> tuple[str, np.ndarray, np.ndarray, int]:
+    path, borough = job
+    keys = np.empty(0, dtype=np.float64)
+    counts = np.empty(0, dtype=np.int64)
+    table = (keys, counts)
+    scanned = 0
+    pf = pq.ParquetFile(path)
+    for batch in pf.iter_batches(batch_size=DEFAULT_BATCH_ROWS, columns=["fare_amount"]):
+        fares = batch.column(0).to_numpy(zero_copy_only=False)
+        scanned += fares.size
+        table = percentile.merge_sparse(table, percentile.chunk_sparse_table(fares))
+    return borough, table[0], table[1], scanned
+
+
+def run_q4(year: int, workers: int = 3, ceiling_mb: float = DEFAULT_CEILING_MB):
+    """Benchmark Query 4: exact fare percentiles (p50/p90/p99) per
+    pickup borough, via the locked hybrid sparse-table design.
+    Every partition of the year is read (percentiles are holistic —
+    no borough or month can be skipped), but each file is one
+    borough, so workers return one sparse table per file and the
+    main process merges twelve small tables per borough."""
+    index = planner.load_index()
+    selected, prune = planner.select_partitions(index, months=_months_of(year))
+    jobs = [(str(REPO_ROOT / e["path"]), e["borough"]) for e in selected]
+    partials, stats = _run_pool(_q4_partial, jobs, workers, ceiling_mb)
+    by_borough: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    scanned = 0
+    for borough, keys, counts, n in partials:
+        scanned += n
+        cur = by_borough.get(
+            borough, (np.empty(0, dtype=np.float64), np.empty(0, dtype=np.int64))
+        )
+        by_borough[borough] = percentile.merge_sparse(cur, (keys, counts))
+    rows = []
+    for borough in sorted(by_borough):
+        keys, counts = by_borough[borough]
+        qs = percentile.percentiles_from_sparse(keys, counts)
+        rows.append(
+            {
+                "borough": borough,
+                "trips": int(counts.sum()),
+                "distinct_fares": int(keys.size),
+                "p50": qs[0.5],
+                "p90": qs[0.9],
+                "p99": qs[0.99],
+            }
+        )
+    stats.update(prune)
+    stats["rows_scanned"] = int(scanned)
+    stats["query"] = "Q4 exact fare percentiles p50/p90/p99 per pickup borough"
+    return rows, stats
+
+
 if __name__ == "__main__":
     year = int(sys.argv[1]) if len(sys.argv) > 1 else 2024
     counts, stats = run_q1(year)

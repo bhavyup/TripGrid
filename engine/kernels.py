@@ -71,6 +71,33 @@ def topk_indices(values: np.ndarray, k: int) -> np.ndarray:
     return part[np.argsort(-values[part])]
 
 
+def select_kth_int64(values: np.ndarray, k: int) -> int:
+    """The k-th smallest value (0-based) of an int64 array, by radix
+    selection: bucket by the top byte, keep only the bucket that
+    must contain rank k, repeat on the next byte. No full sort.
+
+    The percentile fallback (DESIGN Traps C). It works on the raw
+    signed integers through an order-preserving flip — XOR with the
+    sign bit maps int64 order onto uint64 order. Sorting raw float64
+    bytes instead would order negatives backwards (IEEE-754), which
+    is why this takes int64 cents, never floats.
+    """
+    if not 0 <= k < values.size:
+        raise ValueError(f"k={k} out of range for size {values.size}")
+    arr = (values.astype(np.int64) ^ np.iinfo(np.int64).min).view(np.uint64).copy()
+    for shift in range(56, -1, -8):
+        byte = ((arr >> shift) & 0xFF).astype(np.int64)
+        counts = np.bincount(byte, minlength=256)
+        cum = np.cumsum(counts)
+        bucket = int(np.searchsorted(cum, k, side="right"))
+        if bucket > 0:
+            k -= int(cum[bucket - 1])
+        arr = arr[byte == bucket]
+        if arr.size == 1:
+            break
+    return int(arr[0].view(np.int64) ^ np.iinfo(np.int64).min)
+
+
 def merge_partials(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Merge two partial count/sum vectors. This is just addition —
     the whole reason chunked execution gives the same answer as
