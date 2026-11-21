@@ -114,7 +114,7 @@ def run_q1(
 # Each worker handles whole files and returns a small partial; the
 # main process merges partials by addition, exactly as in M1.
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 from engine import planner, zones
 
@@ -122,29 +122,44 @@ PAYMENT_TYPES = 8  # payment_type values are 0..6 in practice
 FRIDAY = 4  # in kernels.weekday_of numbering (Monday=0)
 EVENING_START, EVENING_END = 17, 23  # 17:00 .. 23:59
 POOL_BATCH_ROWS = 262_144  # pool workers take bigger bites: fewer per-batch overheads
-# Worker count is a MEMORY decision, not a hope. The 2-3 cap in the
-# design came from Windows spawn overhead (~100-150 MB per worker);
-# in WSL/Linux the pool forks, startup is cheap, and a worker's peak
-# is ~180 MB — so 8 workers + main stay inside the 2 GB ceiling with
-# room to spare. The ceiling is still enforced by measurement on
-# every run (_run_pool raises if the tree crosses it); if a future
-# query's workers get heavier, the run fails loudly instead of
-# quietly swapping, and the count comes down.
+# Workers are THREADS, not processes (changed after the process pool
+# measured 1.4-1.8 GB peak: eight Python+PyArrow runtimes duplicated
+# in RAM). The heavy work — Parquet decode/decompression in PyArrow's
+# C++ layer and the NumPy kernels — releases the GIL, so threads get
+# real multi-core execution while sharing ONE runtime; a thread's
+# marginal cost is just its batch buffers. The ceiling is still
+# enforced by measurement on every run (_run_pool raises if the
+# process crosses it). If a future kernel turns out to hold the GIL,
+# the suite numbers will show it and this goes back to processes.
 DEFAULT_WORKERS = 8
+# Cost-based fast path: when the planner's surviving row estimate is
+# tiny, scheduling a pool costs more than the scan itself — run the
+# partials inline on the calling thread instead. (Real engines do
+# the same check; the manifest makes the estimate free.)
+INLINE_ROWS_THRESHOLD = 1_000_000
 
 
 def _months_of(year: int) -> set[str]:
     return {f"{year}-{m:02d}" for m in range(1, 13)}
 
 
-def _run_pool(worker, jobs: list, workers: int, ceiling_mb: float):
-    """Run worker over jobs in a pool, merge nothing — returns the
-    list of partials plus run stats. Peak RSS covers the whole tree
-    (main + pool workers), and the ceiling is enforced on it."""
+def _run_pool(worker, jobs: list, workers: int, ceiling_mb: float, est_rows: int | None = None):
+    """Run worker over jobs, merge nothing — returns the list of
+    partials plus run stats. Peak RSS is measured on the process
+    (threads share it), and the ceiling is enforced on it.
+
+    est_rows is the planner's surviving-row estimate: below
+    INLINE_ROWS_THRESHOLD the pool is skipped entirely and the
+    partials run inline — scheduling would cost more than the scan.
+    """
+    inline = est_rows is not None and est_rows < INLINE_ROWS_THRESHOLD
     t0 = time.perf_counter()
     with PeakSampler() as sampler:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
-            partials = list(pool.map(worker, jobs))
+        if inline:
+            partials = [worker(job) for job in jobs]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                partials = list(pool.map(worker, jobs))
     wall = time.perf_counter() - t0
     if sampler.peak_mb > ceiling_mb:
         raise CeilingExceeded(
@@ -155,7 +170,8 @@ def _run_pool(worker, jobs: list, workers: int, ceiling_mb: float):
         "peak_rss_mb": round(sampler.peak_mb, 1),
         "ceiling_mb": ceiling_mb,
         "under_ceiling": sampler.peak_mb <= ceiling_mb,
-        "workers": workers,
+        "workers": 0 if inline else workers,
+        "inline_fast_path": inline,
     }
     return partials, stats
 
@@ -200,7 +216,9 @@ def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
     jobs = [
         (str(REPO_ROOT / e["path"]), tuple(sorted(airports))) for e in selected
     ]
-    partials, stats = _run_pool(_q2_partial, jobs, workers, ceiling_mb)
+    partials, stats = _run_pool(
+        _q2_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+    )
     counts = sum(p[0] for p in partials)
     fare_sum = sum(p[1] for p in partials)
     tip_sum = sum(p[2] for p in partials)
@@ -262,7 +280,9 @@ def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
         index, months=_months_of(year), boroughs={"Manhattan"}
     )
     jobs = [(str(REPO_ROOT / e["path"]),) for e in selected]
-    partials, stats = _run_pool(_q3_partial, jobs, workers, ceiling_mb)
+    partials, stats = _run_pool(
+        _q3_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+    )
     counts = sum(p[0] for p in partials)
     zone_map = zones.load_zones()
     rows = []
@@ -306,7 +326,9 @@ def _run_q1_pool(year: int, workers: int, ceiling_mb: float):
     jobs = [
         (str(REPO_ROOT / e["path"]), int(e["month"][5:7]) - 1) for e in selected
     ]
-    partials, stats = _run_pool(_q1_partial, jobs, workers, ceiling_mb)
+    partials, stats = _run_pool(
+        _q1_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+    )
     counts = np.zeros((MONTHS, ZONE_RANGE), dtype=np.int64)
     scanned = 0
     for month_idx, vec, n in partials:
@@ -344,7 +366,9 @@ def run_q4(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
     index = planner.load_index()
     selected, prune = planner.select_partitions(index, months=_months_of(year))
     jobs = [(str(REPO_ROOT / e["path"]), e["borough"]) for e in selected]
-    partials, stats = _run_pool(_q4_partial, jobs, workers, ceiling_mb)
+    partials, stats = _run_pool(
+        _q4_partial, jobs, workers, ceiling_mb, est_rows=prune["rows_selected"]
+    )
     by_borough: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     scanned = 0
     for borough, keys, counts, n in partials:
