@@ -25,8 +25,8 @@ const WHY: Record<string, string> = {
   q4: "Exact percentiles come from sparse fare tables, nothing sorted, nothing approximated — DuckDB has to sort the year in memory to answer at all",
 };
 
-const ENGINES: { id: string; label: string; us?: boolean }[] = [
-  { id: "tripgrid", label: "TripGrid", us: true },
+const ENGINES: { id: string; label: string }[] = [
+  { id: "tripgrid", label: "TripGrid" },
   { id: "duckdb", label: "DuckDB" },
   { id: "pandas", label: "pandas" },
 ];
@@ -38,7 +38,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 interface Row {
   id: string;
   label: string;
-  us?: boolean;
   wall?: number;
   peak?: number;
 }
@@ -97,12 +96,19 @@ function Charts({ rows }: { rows: Row[] }) {
   const peaks = rows.map((r) => r.peak).filter((v): v is number => v !== undefined);
   const maxTime = walls.length ? Math.max(...walls) : 1;
   const maxMem = Math.max(CEILING, ...peaks) * 1.06;
+  // Gold is earned per chart: the lowest present value wins it.
+  // A missing value (a live run that hasn't happened) never can.
+  const minWall = walls.length ? Math.min(...walls) : Infinity;
+  const minPeak = peaks.length ? Math.min(...peaks) : Infinity;
   return (
     <div className="bcharts">
       <div className="bchart">
         <span className="label">Wall time — seconds, lower wins</span>
         {rows.map((r) => (
-          <div className={`brow${r.us ? " us" : ""}`} key={r.id}>
+          <div
+            className={`brow${r.wall !== undefined && r.wall === minWall ? " win" : ""}`}
+            key={r.id}
+          >
             <div className="eng">{r.label}</div>
             <div className="track">
               <div
@@ -119,7 +125,10 @@ function Charts({ rows }: { rows: Row[] }) {
         {rows.map((r) => {
           const over = r.peak !== undefined && r.peak > CEILING;
           return (
-            <div className={`brow${r.us ? " us" : ""}`} key={r.id}>
+            <div
+              className={`brow${r.peak !== undefined && r.peak === minPeak ? " win" : ""}`}
+              key={r.id}
+            >
               <div className="eng">{r.label}</div>
               <div className="track">
                 <div
@@ -172,7 +181,6 @@ function ColdView({ suite }: { suite: BenchSuite | undefined }) {
           return {
             id: e.id,
             label: e.label,
-            us: e.us,
             wall: run?.wall_seconds,
             peak: run?.peak_rss_mb,
           };
@@ -250,7 +258,6 @@ function LiveView({
             return {
               id: e.id,
               label: e.label,
-              us: e.us,
               wall: live?.wall_seconds,
               peak: live?.peak_rss_mb,
             };
@@ -259,7 +266,6 @@ function LiveView({
           return {
             id: e.id,
             label: e.label,
-            us: e.us,
             wall: run?.wall_seconds,
             peak: run?.peak_rss_mb,
           };

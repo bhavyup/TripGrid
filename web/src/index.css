@@ -1059,7 +1059,9 @@ section {
   color: var(--bone-dim);
 }
 
-.brow.us .eng {
+/* Gold belongs to the winner of each chart — the lowest
+   wall time, the lowest peak — never to a fixed engine. */
+.brow.win .eng {
   color: var(--amber);
   font-weight: 600;
 }
@@ -1078,7 +1080,7 @@ section {
   background: var(--bone-faint);
 }
 
-.brow.us .fill {
+.brow.win .fill {
   background: var(--amber);
 }
 
