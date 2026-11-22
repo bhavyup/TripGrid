@@ -3,12 +3,16 @@ HTTP, the result cache answering the second time, the SSE progress
 stream, and error handling. Uses one real (small) query per test so
 the whole file stays fast.
 """
+import json
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from api.app import app
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")
@@ -28,10 +32,19 @@ def _wait_done(client, job_id, timeout_s=60):
 
 
 def test_meta(client):
+    # Meta must report the partition index as it actually is — the
+    # archive grows (freshness appends, new eras), so the expected
+    # values come from the index itself, never a frozen snapshot.
+    index = json.loads(
+        (REPO_ROOT / "data" / "partitioned" / "partitions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    years = sorted({int(p["month"][:4]) for p in index["partitions"]})
     body = client.get("/api/meta").json()
-    assert body["years"] == [2024, 2025]
-    assert body["total_rows"] == 89_891_688
-    assert body["partitions"] == 192
+    assert body["years"] == years
+    assert body["total_rows"] == index["total_rows"]
+    assert body["partitions"] == len(index["partitions"])
     assert body["cache"]["budget_bytes"] == 128 * 1024 * 1024
 
 

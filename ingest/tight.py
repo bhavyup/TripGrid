@@ -20,6 +20,11 @@ Two honest edges:
   count of saturated rows is returned so the manifest records it.
   Saturated rows are data junk by definition; every sane-trip
   rule still excludes them exactly as before.
+- A money/distance value outside int32 cents/hundredths (Dec 2022
+  carries a $133,391,414.00 "fare") cannot be stored exactly, so
+  it is never clipped or wrapped either: `overflow_mask` finds
+  those rows and the pipeline quarantines them, counted, with
+  the reason recorded — the same treatment as out-of-month rows.
 - Columns the engine has never used (vendor, ratecode, taxes,
   tolls, flags) are not stored. The raw city files stay on disk;
   nothing is unrecoverable.
@@ -42,6 +47,24 @@ _DELTA_ENCODED = {
     "pickup_off_s": "DELTA_BINARY_PACKED",
     "dur_s": "DELTA_BINARY_PACKED",
 }
+
+
+SCALED_COLUMNS = (
+    "trip_distance", "fare_amount", "tip_amount", "total_amount",
+    "congestion_surcharge", "airport_fee",
+)
+
+
+def overflow_mask(table: pa.Table) -> np.ndarray:
+    """Boolean mask of rows that cannot be stored exactly: any
+    scaled money/distance value beyond int32 cents/hundredths,
+    judged by the same rounding rule `_cents` applies."""
+    mask = np.zeros(table.num_rows, dtype=bool)
+    for col in SCALED_COLUMNS:
+        values = table.column(col).to_numpy(zero_copy_only=False)
+        cents = np.round(np.nan_to_num(values.astype(np.float64)) * 100.0)
+        mask |= np.abs(cents) > INT32_MAX
+    return mask
 
 
 def _cents(values: np.ndarray, name: str) -> np.ndarray:

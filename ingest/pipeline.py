@@ -29,7 +29,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ingest.schema import normalize_table
-from ingest.tight import to_tight, write_tight
+from ingest.tight import overflow_mask, to_tight, write_tight
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = REPO_ROOT / "data" / "raw"
@@ -94,13 +94,27 @@ def ingest_month(year: int, month: int, fleet: str = "yellow") -> dict:
     month_label = f"{year}-{month:02d}"
 
     good = table.filter(valid)
+    borough_good = borough[valid]
+
+    # Rows whose money/distance values overflow int32 cents cannot
+    # be stored exactly; they join the quarantine, counted, instead
+    # of blocking the whole month or being silently clipped.
+    overflow = overflow_mask(good)
+    n_overflow = int(np.count_nonzero(overflow))
+    if n_overflow:
+        keep = ~overflow
+        bad_overflow = good.filter(overflow)
+        good = good.filter(keep)
+        borough_good = borough_good[keep]
+    else:
+        bad_overflow = None
 
     # The v2 tight layout (ingest/tight.py) is written per borough
     # partition by hand — one sorted file per borough — instead of
     # through write_dataset, so the stored column set, types, sort
     # order and encodings are exactly the measured ones.
     tight_table, order, tight_info = to_tight(good, year, month)
-    borough_sorted = borough[valid][order]
+    borough_sorted = borough_good[order]
 
     PART_DIR.mkdir(parents=True, exist_ok=True)
     for label in sorted(set(borough_sorted.tolist())):
@@ -109,13 +123,32 @@ def ingest_month(year: int, month: int, fleet: str = "yellow") -> dict:
         out_dir.mkdir(parents=True, exist_ok=True)
         write_tight(tight_table.take(pa.array(rows)), out_dir / "part-0.parquet")
 
+    reasons: dict[str, int] = {}
     if n_quar:
+        reasons["pickup_out_of_month"] = n_quar
+    if n_overflow:
+        reasons["value_overflows_int32"] = n_overflow
+    if reasons:
         QUAR_DIR.mkdir(parents=True, exist_ok=True)
-        bad = table.filter(~valid)
-        bad = bad.append_column(
-            "quarantine_reason", pa.array(["pickup_out_of_month"] * n_quar)
+        bad_parts = []
+        if n_quar:
+            bad_parts.append(
+                table.filter(~valid).append_column(
+                    "quarantine_reason",
+                    pa.array(["pickup_out_of_month"] * n_quar),
+                )
+            )
+        if bad_overflow is not None:
+            bad_parts.append(
+                bad_overflow.append_column(
+                    "quarantine_reason",
+                    pa.array(["value_overflows_int32"] * n_overflow),
+                )
+            )
+        pq.write_table(
+            pa.concat_tables(bad_parts),
+            QUAR_DIR / f"{fleet}_tripdata_{year}-{month:02d}.parquet",
         )
-        pq.write_table(bad, QUAR_DIR / f"{fleet}_tripdata_{year}-{month:02d}.parquet")
 
     fares = good.column("fare_amount").to_numpy(zero_copy_only=False)
     entry = {
@@ -125,8 +158,8 @@ def ingest_month(year: int, month: int, fleet: str = "yellow") -> dict:
         "dur_saturated": tight_info["dur_saturated"],
         "rows_in": rows_in,
         "rows_partitioned": int(good.num_rows),
-        "rows_quarantined": n_quar,
-        "quarantine_reasons": {"pickup_out_of_month": n_quar} if n_quar else {},
+        "rows_quarantined": n_quar + n_overflow,
+        "quarantine_reasons": reasons,
         "columns_seen": seen,
         "columns_dropped": dropped,
         "zero_distance_trips": int(
@@ -134,7 +167,7 @@ def ingest_month(year: int, month: int, fleet: str = "yellow") -> dict:
         ),
         **fare_measurements(fares),
         "boroughs": {
-            b: int(np.count_nonzero(borough[valid] == b)) for b in sorted(set(borough[valid]))
+            b: int(np.count_nonzero(borough_good == b)) for b in sorted(set(borough_good))
         },
     }
     _update_manifest(entry)
