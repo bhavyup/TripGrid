@@ -21,9 +21,9 @@ def duckdb_q4(year: int) -> dict[str, tuple[int, float, float, float]]:
         f"""
         SELECT regexp_extract(filename, '/\\d{{4}}-\\d{{2}}/([^/]+)/', 1) AS borough,
                count(*) AS trips,
-               quantile_cont(fare_amount, 0.5) AS p50,
-               quantile_cont(fare_amount, 0.9) AS p90,
-               quantile_cont(fare_amount, 0.99) AS p99
+               quantile_cont(fare_c / 100.0, 0.5) AS p50,
+               quantile_cont(fare_c / 100.0, 0.9) AS p90,
+               quantile_cont(fare_c / 100.0, 0.99) AS p99
         FROM read_parquet('{pattern}', filename = true)
         WHERE substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 1, 4) = '{year}'
         GROUP BY borough

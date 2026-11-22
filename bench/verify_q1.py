@@ -22,7 +22,7 @@ def duckdb_q1(year: int) -> np.ndarray:
     rows = duckdb.sql(
         f"""
         SELECT CAST(substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 6, 2) AS INTEGER) - 1 AS month_idx,
-               pu_location_id AS zone,
+               pu AS zone,
                count(*) AS trips
         FROM read_parquet('{pattern}', filename = true)
         WHERE substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 1, 4) = '{year}'

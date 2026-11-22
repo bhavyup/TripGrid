@@ -1,10 +1,12 @@
 """M0 ingest pipeline for one month of TLC data.
 
 Steps: read raw Parquet -> normalise schema (schema.py) -> validate ->
-write partitioned dataset + quarantine file -> update the manifest.
+convert to the v2 tight layout (ingest/tight.py) and write one file
+per borough partition + quarantine file -> update the manifest.
 
 Partition layout: pickup_month x pickup_borough (borough via the TLC
-zone lookup on pu_location_id), Hive-style under data/partitioned/.
+zone lookup on pu_location_id), plain directories under
+data/partitioned/.
 
 Validation rule (M0): a row is quarantined only when its pickup
 timestamp falls outside the file's own month — TLC files routinely
@@ -24,10 +26,10 @@ from pathlib import Path
 
 import numpy as np
 import pyarrow as pa
-import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from ingest.schema import normalize_table
+from ingest.tight import to_tight, write_tight
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = REPO_ROOT / "data" / "raw"
@@ -67,8 +69,8 @@ def fare_measurements(fares: np.ndarray) -> dict:
     }
 
 
-def ingest_month(year: int, month: int) -> dict:
-    raw_path = RAW_DIR / f"yellow_tripdata_{year}-{month:02d}.parquet"
+def ingest_month(year: int, month: int, fleet: str = "yellow") -> dict:
+    raw_path = RAW_DIR / f"{fleet}_tripdata_{year}-{month:02d}.parquet"
     if not raw_path.exists():
         raise FileNotFoundError(f"{raw_path} — run ingest.download first")
     boroughs = load_borough_map()
@@ -92,17 +94,20 @@ def ingest_month(year: int, month: int) -> dict:
     month_label = f"{year}-{month:02d}"
 
     good = table.filter(valid)
-    good = good.append_column("pickup_month", pa.array([month_label] * good.num_rows))
-    good = good.append_column("pickup_borough", pa.array(borough[valid]))
+
+    # The v2 tight layout (ingest/tight.py) is written per borough
+    # partition by hand — one sorted file per borough — instead of
+    # through write_dataset, so the stored column set, types, sort
+    # order and encodings are exactly the measured ones.
+    tight_table, order, tight_info = to_tight(good, year, month)
+    borough_sorted = borough[valid][order]
 
     PART_DIR.mkdir(parents=True, exist_ok=True)
-    ds.write_dataset(
-        good,
-        base_dir=PART_DIR,
-        format="parquet",
-        partitioning=["pickup_month", "pickup_borough"],
-        existing_data_behavior="overwrite_or_ignore",
-    )
+    for label in sorted(set(borough_sorted.tolist())):
+        rows = np.nonzero(borough_sorted == label)[0]
+        out_dir = PART_DIR / month_label / label
+        out_dir.mkdir(parents=True, exist_ok=True)
+        write_tight(tight_table.take(pa.array(rows)), out_dir / "part-0.parquet")
 
     if n_quar:
         QUAR_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,11 +115,14 @@ def ingest_month(year: int, month: int) -> dict:
         bad = bad.append_column(
             "quarantine_reason", pa.array(["pickup_out_of_month"] * n_quar)
         )
-        pq.write_table(bad, QUAR_DIR / f"yellow_tripdata_{year}-{month:02d}.parquet")
+        pq.write_table(bad, QUAR_DIR / f"{fleet}_tripdata_{year}-{month:02d}.parquet")
 
     fares = good.column("fare_amount").to_numpy(zero_copy_only=False)
     entry = {
         "source_file": raw_path.name,
+        "fleet": fleet,
+        "layout": "v2",
+        "dur_saturated": tight_info["dur_saturated"],
         "rows_in": rows_in,
         "rows_partitioned": int(good.num_rows),
         "rows_quarantined": n_quar,

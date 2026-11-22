@@ -6,8 +6,11 @@ Two kinds of proof:
    (counts and percentiles) or to float-summation tolerance (means).
 2. DUCKDB — the new presets (demand clock, busiest routes, city
    speed, tip behaviour, junk audit) match an independent DuckDB
-   reference over the same partitioned parquet, with the sane-trip
-   rule written out in SQL from the same definition.
+   reference over the same partitioned parquet. The reference SQL
+   reads the v2 stored columns directly (fare_c cents, pickup_off_s
+   offsets) — it shares no code with the engine's storage layer —
+   and the sane-trip rule is written out in SQL from the same
+   definition.
 
 All scans run on the real 2024 partition set (41,169,300 trips).
 """
@@ -146,9 +149,14 @@ def test_duckdb_demand_clock_2024():
     assert stats["gate"]["buckets"] == 168
     mine = {(r["weekday"], r["hour"]): r["trips"] for r in rows}
     ref = _duck(f"""
-        SELECT (dayofweek(pickup_datetime) + 6) % 7 AS wd,
-               hour(pickup_datetime) AS hr, count(*) AS n
-        FROM read_parquet('{GLOB_2024}')
+        WITH t AS (
+            SELECT CAST(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1) || '-01' AS TIMESTAMP)
+                   + pickup_off_s * INTERVAL 1 SECOND AS ts
+            FROM read_parquet('{GLOB_2024}', filename = true)
+        )
+        SELECT (dayofweek(ts) + 6) % 7 AS wd,
+               hour(ts) AS hr, count(*) AS n
+        FROM t
         GROUP BY wd, hr
     """)
     theirs = {(int(wd), int(hr)): int(n) for wd, hr, n in ref}
@@ -159,7 +167,7 @@ def test_duckdb_busiest_routes_2024():
     rows, _ = run_preset("busiest_routes", range_override=RANGE_2024)
     assert len(rows) == 20
     ref = _duck(f"""
-        SELECT pu_location_id, do_location_id, count(*) AS n
+        SELECT pu, "do", count(*) AS n
         FROM read_parquet('{GLOB_2024}')
         GROUP BY 1, 2 ORDER BY n DESC, 1, 2 LIMIT 25
     """)
@@ -177,15 +185,19 @@ def test_duckdb_city_speed_2024():
         "dimensions": ["hour"],
     })
     mine = {r["hour"]: r for r in rows}
-    sane = ("(epoch(dropoff_datetime) - epoch(pickup_datetime)) "
-            "BETWEEN 60 AND 14400 AND trip_distance BETWEEN 0.1 AND 200")
+    sane = "dur_s BETWEEN 60 AND 14400 AND dist_100mi BETWEEN 10 AND 20000"
     ref = _duck(f"""
-        SELECT hour(pickup_datetime) AS hr, count(*) AS trips,
+        WITH t AS (
+            SELECT CAST(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1) || '-01' AS TIMESTAMP)
+                   + pickup_off_s * INTERVAL 1 SECOND AS ts,
+                   dur_s, dist_100mi
+            FROM read_parquet('{GLOB_2024}', filename = true)
+        )
+        SELECT hour(ts) AS hr, count(*) AS trips,
                count(*) FILTER (WHERE {sane}) AS sane_n,
-               sum(trip_distance) FILTER (WHERE {sane}) AS sd,
-               sum(epoch(dropoff_datetime) - epoch(pickup_datetime))
-                   FILTER (WHERE {sane}) AS st
-        FROM read_parquet('{GLOB_2024}')
+               (sum(dist_100mi) FILTER (WHERE {sane})) / 100.0 AS sd,
+               sum(dur_s) FILTER (WHERE {sane}) AS st
+        FROM t
         GROUP BY hr
     """)
     assert len(ref) == 24
@@ -205,11 +217,11 @@ def test_duckdb_tip_behaviour_2024():
     mine = {r["pu_borough"]: r for r in rows}
     ref = _duck(f"""
         SELECT z.Borough AS borough, count(*) AS trips,
-               100.0 * sum(t.tip_amount) FILTER (WHERE t.payment_type = 1)
-                     / sum(t.fare_amount) FILTER (WHERE t.payment_type = 1)
+               100.0 * sum(t.tip_c) FILTER (WHERE t.pay = 1)
+                     / sum(t.fare_c) FILTER (WHERE t.pay = 1)
                    AS pct
         FROM read_parquet('{GLOB_2024}') t
-        JOIN read_csv('{ZONES_CSV}') z ON z.LocationID = t.pu_location_id
+        JOIN read_csv('{ZONES_CSV}') z ON z.LocationID = t.pu
         GROUP BY borough
     """)
     assert set(mine) == {b for b, _, _ in ref}
@@ -227,8 +239,8 @@ def test_duckdb_junk_audit_2024():
         "filters": {"fare_max": -0.01},
     })
     ref = _duck(f"""
-        SELECT count(*), sum(fare_amount)
-        FROM read_parquet('{GLOB_2024}') WHERE fare_amount <= -0.01
+        SELECT count(*), sum(fare_c) / 100.0
+        FROM read_parquet('{GLOB_2024}') WHERE fare_c <= -1
     """)
     assert neg[0]["trips"] == int(ref[0][0])
     assert neg[0]["sum_fare"] == pytest.approx(float(ref[0][1]), rel=1e-9)
@@ -240,9 +252,9 @@ def test_duckdb_junk_audit_2024():
         "filters": {"dist_max": 0.0, "fare_min": 0.01},
     })
     ref = _duck(f"""
-        SELECT count(*), sum(fare_amount)
+        SELECT count(*), sum(fare_c) / 100.0
         FROM read_parquet('{GLOB_2024}')
-        WHERE trip_distance <= 0 AND fare_amount >= 0.01
+        WHERE dist_100mi <= 0 AND fare_c >= 1
     """)
     assert paid[0]["trips"] == int(ref[0][0])
     assert paid[0]["sum_fare"] == pytest.approx(float(ref[0][1]), rel=1e-9)

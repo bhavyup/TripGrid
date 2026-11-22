@@ -18,9 +18,8 @@ bucket count, never by the number of trips scanned.
 from __future__ import annotations
 
 import numpy as np
-import pyarrow.parquet as pq
 
-from engine import kernels, percentile, planner, zones
+from engine import kernels, percentile, planner, storage, zones
 from engine.executor import (
     DEFAULT_CEILING_MB,
     DEFAULT_WORKERS,
@@ -256,17 +255,10 @@ def _partial(plan: _Plan, job) -> tuple[dict, dict, int]:
     sparse: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     scanned = 0
 
-    pf = pq.ParquetFile(path)
-    # A pure-count recipe needs no columns at all; iter_batches
-    # still needs one to report row counts, so read the cheapest
-    # stand-in (always present in the canonical schema).
-    read_columns = plan.columns or ["pu_location_id"]
-    for batch in pf.iter_batches(batch_size=POOL_BATCH_ROWS, columns=read_columns):
-        cols = {
-            name: batch.column(i).to_numpy(zero_copy_only=False)
-            for i, name in enumerate(plan.columns)
-        }
-        scanned += batch.num_rows
+    for n_rows, cols in storage.iter_canonical(
+        path, plan.columns, POOL_BATCH_ROWS, month=month_str
+    ):
+        scanned += n_rows
         derived: dict = {}
         mask = _batch_mask(cols, plan, derived)
         if mask is not None:
@@ -275,7 +267,7 @@ def _partial(plan: _Plan, job) -> tuple[dict, dict, int]:
             idx = np.nonzero(mask)[0]
             cols = {k: v[idx] for k, v in cols.items()}
             derived = {k: v[idx] for k, v in derived.items()}
-        n = len(next(iter(cols.values()))) if cols else batch.num_rows
+        n = len(next(iter(cols.values()))) if cols else n_rows
         if "pu_location_id" in cols:
             derived["pu"] = cols["pu_location_id"].astype(np.int64)
         if "do_location_id" in cols:

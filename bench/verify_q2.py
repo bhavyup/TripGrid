@@ -20,12 +20,12 @@ def duckdb_q2(year: int) -> dict[int, tuple[int, float, float]]:
     airports = ",".join(str(i) for i in sorted(airport_ids(load_zones())))
     rows = duckdb.sql(
         f"""
-        SELECT payment_type, count(*) AS trips, avg(fare_amount) AS avg_fare,
-               100.0 * sum(tip_amount) / sum(fare_amount) AS tip_pct
+        SELECT pay AS payment_type, count(*) AS trips, avg(fare_c) / 100.0 AS avg_fare,
+               100.0 * sum(tip_c) / sum(fare_c) AS tip_pct
         FROM read_parquet('{pattern}', filename = true)
         WHERE substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 1, 4) = '{year}'
-          AND pu_location_id IN ({airports})
-        GROUP BY payment_type
+          AND pu IN ({airports})
+        GROUP BY pay
         """
     ).fetchall()
     return {int(p): (int(t), float(a), float(tp)) for p, t, a, tp in rows}

@@ -19,9 +19,8 @@ import time
 from pathlib import Path
 
 import numpy as np
-import pyarrow.parquet as pq
 
-from engine import kernels
+from engine import kernels, storage
 from engine.measure import PeakSampler
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -56,9 +55,10 @@ def iter_zone_chunks(year: int, batch_rows: int = DEFAULT_BATCH_ROWS):
         raise FileNotFoundError(f"no partitioned files for {year} under {PART_DIR}")
     for path in files:
         month_idx = _month_index(path)
-        pf = pq.ParquetFile(path)
-        for batch in pf.iter_batches(batch_size=batch_rows, columns=["pu_location_id"]):
-            yield month_idx, batch.column(0).to_numpy(zero_copy_only=False)
+        for _n, cols in storage.iter_canonical(
+            path, ["pu_location_id"], batch_rows
+        ):
+            yield month_idx, cols["pu_location_id"]
 
 
 def run_q1(
@@ -212,25 +212,26 @@ def _run_pool(
 
 
 def _q2_partial(job) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    path, airport_tuple = job
+    path, month, airport_tuple = job
     airports = np.array(airport_tuple, dtype=np.int64)
     counts = np.zeros(PAYMENT_TYPES, dtype=np.int64)
     fare_sum = np.zeros(PAYMENT_TYPES, dtype=np.float64)
     tip_sum = np.zeros(PAYMENT_TYPES, dtype=np.float64)
     scanned = 0
-    pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(
-        batch_size=POOL_BATCH_ROWS,
-        columns=["pu_location_id", "payment_type", "fare_amount", "tip_amount"],
+    for _n, cols in storage.iter_canonical(
+        path,
+        ["pu_location_id", "payment_type", "fare_amount", "tip_amount"],
+        POOL_BATCH_ROWS,
+        month=month,
     ):
-        pu = batch.column(0).to_numpy(zero_copy_only=False)
+        pu = cols["pu_location_id"]
         scanned += pu.size
         mask = np.isin(pu, airports)
         if not mask.any():
             continue
-        pay = batch.column(1).to_numpy(zero_copy_only=False)[mask]
-        fare = batch.column(2).to_numpy(zero_copy_only=False)[mask]
-        tip = batch.column(3).to_numpy(zero_copy_only=False)[mask]
+        pay = cols["payment_type"][mask]
+        fare = cols["fare_amount"][mask]
+        tip = cols["tip_amount"][mask]
         counts += kernels.group_count(pay, PAYMENT_TYPES)
         fare_sum += kernels.group_sum(pay, fare, PAYMENT_TYPES)
         tip_sum += kernels.group_sum(pay, tip, PAYMENT_TYPES)
@@ -249,7 +250,8 @@ def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
         index, months=_months_of(year), boroughs=airport_boroughs
     )
     jobs = [
-        (str(REPO_ROOT / e["path"]), tuple(sorted(airports))) for e in selected
+        (str(REPO_ROOT / e["path"]), e["month"], tuple(sorted(airports)))
+        for e in selected
     ]
     partials, stats = _run_pool(
         _q2_partial, jobs, workers, ceiling_mb,
@@ -280,14 +282,14 @@ def run_q2(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
 
 
 def _q3_partial(job) -> tuple[np.ndarray, int]:
-    (path,) = job
+    path, month = job
     counts = np.zeros(ZONE_RANGE, dtype=np.int64)
     scanned = 0
-    pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(
-        batch_size=POOL_BATCH_ROWS, columns=["pickup_datetime", "do_location_id"]
+    for _n, cols in storage.iter_canonical(
+        path, ["pickup_datetime", "do_location_id"], POOL_BATCH_ROWS,
+        month=month,
     ):
-        dt = batch.column(0).to_numpy(zero_copy_only=False)
+        dt = cols["pickup_datetime"]
         scanned += dt.size
         # One fused pass for weekday+hour, then keep only Fridays
         # (~1/7 of rows) before the hour check — the expensive
@@ -301,7 +303,7 @@ def _q3_partial(job) -> tuple[np.ndarray, int]:
         ]
         if evening.size == 0:
             continue
-        do = batch.column(1).to_numpy(zero_copy_only=False)[evening]
+        do = cols["do_location_id"][evening]
         counts += kernels.group_count(do, ZONE_RANGE)
     return counts, scanned
 
@@ -315,7 +317,7 @@ def run_q3(year: int, workers: int = DEFAULT_WORKERS, ceiling_mb: float = DEFAUL
     selected, prune = planner.select_partitions(
         index, months=_months_of(year), boroughs={"Manhattan"}
     )
-    jobs = [(str(REPO_ROOT / e["path"]),) for e in selected]
+    jobs = [(str(REPO_ROOT / e["path"]), e["month"]) for e in selected]
     partials, stats = _run_pool(
         _q3_partial, jobs, workers, ceiling_mb,
         est_rows=prune["rows_selected"], pool=pool, progress=progress,
@@ -349,9 +351,10 @@ def _q1_partial(job) -> tuple[int, np.ndarray, int]:
     path, month_idx = job
     counts = np.zeros(ZONE_RANGE, dtype=np.int64)
     scanned = 0
-    pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(batch_size=POOL_BATCH_ROWS, columns=["pu_location_id"]):
-        zones_arr = batch.column(0).to_numpy(zero_copy_only=False)
+    for _n, cols in storage.iter_canonical(
+        path, ["pu_location_id"], POOL_BATCH_ROWS
+    ):
+        zones_arr = cols["pu_location_id"]
         scanned += zones_arr.size
         counts += kernels.group_count(zones_arr, ZONE_RANGE)
     return month_idx, counts, scanned
@@ -386,9 +389,10 @@ def _q4_partial(job) -> tuple[str, np.ndarray, np.ndarray, int]:
     counts = np.empty(0, dtype=np.int64)
     table = (keys, counts)
     scanned = 0
-    pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(batch_size=POOL_BATCH_ROWS, columns=["fare_amount"]):
-        fares = batch.column(0).to_numpy(zero_copy_only=False)
+    for _n, cols in storage.iter_canonical(
+        path, ["fare_amount"], POOL_BATCH_ROWS
+    ):
+        fares = cols["fare_amount"]
         scanned += fares.size
         table = percentile.merge_sparse(table, percentile.chunk_sparse_table(fares))
     return borough, table[0], table[1], scanned

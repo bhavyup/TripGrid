@@ -21,12 +21,19 @@ def duckdb_q3(year: int) -> list[tuple[int, int]]:
     manhattan = ",".join(str(i) for i in sorted(ids_in_borough(load_zones(), "Manhattan")))
     rows = duckdb.sql(
         f"""
-        SELECT do_location_id AS zone, count(*) AS trips
-        FROM read_parquet('{pattern}', filename = true)
-        WHERE substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 1, 4) = '{year}'
-          AND pu_location_id IN ({manhattan})
-          AND dayofweek(pickup_datetime) = 5
-          AND hour(pickup_datetime) BETWEEN 17 AND 23
+        WITH t AS (
+            SELECT "do", pu,
+                   CAST(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1) || '-01' AS TIMESTAMP)
+                   + pickup_off_s * INTERVAL 1 SECOND AS ts,
+                   substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 1, 4) AS yr
+            FROM read_parquet('{pattern}', filename = true)
+        )
+        SELECT "do" AS zone, count(*) AS trips
+        FROM t
+        WHERE yr = '{year}'
+          AND pu IN ({manhattan})
+          AND dayofweek(ts) = 5
+          AND hour(ts) BETWEEN 17 AND 23
         GROUP BY zone
         ORDER BY trips DESC
         LIMIT 21

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from engine import planner
+from engine import planner, storage
 from engine.measure import PeakSampler
 from engine.zones import airport_ids, load_zones
 
@@ -74,7 +74,7 @@ def duckdb_run(query: str, year: int):
         rows = duckdb.sql(
             f"""
             SELECT CAST(substr(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1), 6, 2) AS INTEGER) - 1 AS m,
-                   pu_location_id AS z, count(*) AS c
+                   pu AS z, count(*) AS c
             FROM read_parquet({files!r}, filename = true) GROUP BY m, z
             """
         ).fetchall()
@@ -89,11 +89,11 @@ def duckdb_run(query: str, year: int):
         airports = ",".join(str(i) for i in sorted(airport_ids(zone_map)))
         rows = duckdb.sql(
             f"""
-            SELECT payment_type, count(*), avg(fare_amount),
-                   100.0 * sum(tip_amount) / sum(fare_amount)
+            SELECT pay AS payment_type, count(*), avg(fare_c) / 100.0,
+                   100.0 * sum(tip_c) / sum(fare_c)
             FROM read_parquet({files!r})
-            WHERE pu_location_id IN ({airports})
-            GROUP BY payment_type ORDER BY payment_type
+            WHERE pu IN ({airports})
+            GROUP BY pay ORDER BY pay
             """
         ).fetchall()
         return {
@@ -106,9 +106,14 @@ def duckdb_run(query: str, year: int):
         files = _files(year, {"Manhattan"})
         rows = duckdb.sql(
             f"""
-            SELECT do_location_id, count(*) AS c FROM read_parquet({files!r})
-            WHERE dayofweek(pickup_datetime) = 5 AND hour(pickup_datetime) BETWEEN 17 AND 23
-            GROUP BY do_location_id ORDER BY c DESC LIMIT 20
+            WITH t AS (
+                SELECT "do", CAST(regexp_extract(filename, '(\\d{{4}}-\\d{{2}})', 1) || '-01' AS TIMESTAMP)
+                           + pickup_off_s * INTERVAL 1 SECOND AS ts
+                FROM read_parquet({files!r}, filename = true)
+            )
+            SELECT "do", count(*) AS c FROM t
+            WHERE dayofweek(ts) = 5 AND hour(ts) BETWEEN 17 AND 23
+            GROUP BY "do" ORDER BY c DESC LIMIT 20
             """
         ).fetchall()
         return {"rows": [[int(z), int(c)] for z, c in rows]}
@@ -117,8 +122,8 @@ def duckdb_run(query: str, year: int):
         rows = duckdb.sql(
             f"""
             SELECT regexp_extract(filename, '/\\d{{4}}-\\d{{2}}/([^/]+)/', 1) AS borough,
-                   count(*), quantile_cont(fare_amount, 0.5),
-                   quantile_cont(fare_amount, 0.9), quantile_cont(fare_amount, 0.99)
+                   count(*), quantile_cont(fare_c / 100.0, 0.5),
+                   quantile_cont(fare_c / 100.0, 0.9), quantile_cont(fare_c / 100.0, 0.99)
             FROM read_parquet({files!r}, filename = true) GROUP BY borough ORDER BY borough
             """
         ).fetchall()
@@ -139,10 +144,12 @@ def pandas_run(query: str, year: int):
         matrix = np.zeros((12, ZONE_RANGE), dtype=np.int64)
         for e in _selected(year, None):
             month_idx = int(e["month"][5:7]) - 1
-            s = pd.read_parquet(REPO_ROOT / e["path"], columns=["pu_location_id"])[
-                "pu_location_id"
-            ]
-            matrix[month_idx] += np.bincount(s.to_numpy(), minlength=ZONE_RANGE)
+            for _n, cols in storage.iter_canonical(
+                REPO_ROOT / e["path"], ["pu_location_id"], 1 << 20
+            ):
+                matrix[month_idx] += np.bincount(
+                    cols["pu_location_id"], minlength=ZONE_RANGE
+                )
         return {"total": int(matrix.sum()), "matrix": matrix.tolist()}
     if query == "q2":
         zone_map = load_zones()
@@ -150,9 +157,16 @@ def pandas_run(query: str, year: int):
         boroughs = {zone_map[i]["borough"].replace("/", "-") for i in airports}
         frames = []
         for e in _selected(year, boroughs):
-            df = pd.read_parquet(
-                REPO_ROOT / e["path"],
-                columns=["pu_location_id", "payment_type", "fare_amount", "tip_amount"],
+            parts = [
+                cols
+                for _n, cols in storage.iter_canonical(
+                    REPO_ROOT / e["path"],
+                    ["pu_location_id", "payment_type", "fare_amount", "tip_amount"],
+                    1 << 20,
+                )
+            ]
+            df = pd.DataFrame(
+                {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
             )
             frames.append(df[df["pu_location_id"].isin(airports)])
         df = pd.concat(frames)
@@ -171,8 +185,17 @@ def pandas_run(query: str, year: int):
     if query == "q3":
         counts = np.zeros(ZONE_RANGE, dtype=np.int64)
         for e in _selected(year, {"Manhattan"}):
-            df = pd.read_parquet(
-                REPO_ROOT / e["path"], columns=["pickup_datetime", "do_location_id"]
+            parts = [
+                cols
+                for _n, cols in storage.iter_canonical(
+                    REPO_ROOT / e["path"],
+                    ["pickup_datetime", "do_location_id"],
+                    1 << 20,
+                    month=e["month"],
+                )
+            ]
+            df = pd.DataFrame(
+                {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
             )
             mask = (df["pickup_datetime"].dt.dayofweek == 4) & (
                 df["pickup_datetime"].dt.hour.between(17, 23)
@@ -189,10 +212,11 @@ def pandas_run(query: str, year: int):
         boroughs = sorted({e["borough"] for e in _selected(year, None)})
         for borough in boroughs:
             parts = [
-                pd.read_parquet(REPO_ROOT / e["path"], columns=["fare_amount"])[
-                    "fare_amount"
-                ].to_numpy()
+                cols["fare_amount"]
                 for e in _selected(year, {borough})
+                for _n, cols in storage.iter_canonical(
+                    REPO_ROOT / e["path"], ["fare_amount"], 1 << 20
+                )
             ]
             fares = np.concatenate(parts)
             p50, p90, p99 = np.percentile(fares, [50, 90, 99])
