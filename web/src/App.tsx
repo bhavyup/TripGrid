@@ -19,13 +19,13 @@ import {
   type ValidateResult,
   type ZoneMap,
 } from "./api";
-import RangeGrid from "./components/RangeGrid";
-import BuilderPanel, {
-  draftFromSpec,
+import {
+  DEFAULT_DRAFT,
   type BuilderDraft,
 } from "./components/BuilderPanel";
-import SpecResults from "./components/SpecResults";
+import InstrumentConsole from "./components/InstrumentConsole";
 import Benchmarks from "./components/Benchmarks";
+import { useInView } from "./utils/motion";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -40,13 +40,7 @@ export default function App() {
   const [mode, setMode] = useState<"presets" | "builder">("presets");
   const [presetId, setPresetId] = useState("congestion_verdict");
   const [range, setRange] = useState<[string, string] | null>(null);
-  const [draft, setDraft] = useState<BuilderDraft>({
-    measures: ["trips"],
-    dimensions: ["month"],
-    filters: {},
-    top_k: null,
-    sort: "key",
-  });
+  const [draft, setDraft] = useState<BuilderDraft>({ ...DEFAULT_DRAFT });
   const [gate, setGate] = useState<ValidateResult | null>(null);
   const [running, setRunning] = useState(false);
   const [fresh, setFresh] = useState(false);
@@ -55,6 +49,8 @@ export default function App() {
   const [status, setStatus] = useState("Idle — pick a question and run it");
   const [payload, setPayload] = useState<SpecJobPayload | null>(null);
   const cacheRef = useRef(new Map<string, SpecJobPayload>());
+  const methodRef = useRef<HTMLDivElement>(null);
+  const methodInView = useInView(methodRef, 0.14);
 
   const refreshLive = useCallback(() => {
     fetchLive().then(setLive).catch(() => undefined);
@@ -70,7 +66,7 @@ export default function App() {
   }, [refreshLive]);
 
   const activePreset = presets.find((p) => p.id === presetId);
-  const isAudit = activePreset?.kind === "audit";
+  const isAudit = mode === "presets" && activePreset?.kind === "audit";
 
   /** The recipe the current controls describe — a preset with the
    * map's range laid over it, or the builder's draft. The audit
@@ -95,23 +91,23 @@ export default function App() {
       ? `spec:${JSON.stringify(effectiveSpec)}`
       : `preset:${presetId}:${range ? range.join("..") : "default"}`;
 
-  // Price the current recipe as the controls move — the gate line
-  // under the Run button is this verdict, always live.
+  // Price the current recipe as the controls move — the gate meter
+  // in the command bar reflects this verdict live.
   useEffect(() => {
     if (!effectiveSpec) {
       setGate(null);
       return;
     }
-    let live = true;
+    let alive = true;
     const t = window.setTimeout(() => {
       validateSpec(effectiveSpec)
         .then((g) => {
-          if (live) setGate(g);
+          if (alive) setGate(g);
         })
         .catch(() => undefined);
-    }, 300);
+    }, 180);
     return () => {
-      live = false;
+      alive = false;
       window.clearTimeout(t);
     };
   }, [effectiveSpec]);
@@ -133,7 +129,7 @@ export default function App() {
     if (running) return;
     if (mode === "presets" && !activePreset) return;
     if (mode === "builder" && !effectiveSpec) return;
-    if (gate && !gate.ok) return;
+    if (!isAudit && gate && !gate.ok) return;
     setRunning(true);
     setPayload(null);
     setFilesDone(0);
@@ -167,11 +163,6 @@ export default function App() {
       setRunning(false);
     }
   }, [running, mode, activePreset, effectiveSpec, gate, presetId, isAudit, range, fresh, signature, refreshLive]);
-
-  const stats = payload?.stats;
-  const months = meta?.months ?? [];
-  const last12: [string, string] | null =
-    months.length >= 12 ? [months[months.length - 12], months[months.length - 1]] : null;
 
   const freshness = meta?.freshness;
   const freshnessLine = !freshness
@@ -247,7 +238,7 @@ export default function App() {
           </div>
           <div className="stat">
             <span className="label">Preset questions</span>
-            <div className="v">11</div>
+            <div className="v">{presets.length || 11}</div>
           </div>
           <div className="stat">
             <span className="label">Engines raced</span>
@@ -265,217 +256,30 @@ export default function App() {
           <span className="tail">Ask — watch it read — believe the receipt</span>
         </div>
 
-        <div className="console">
-          <div>
-            <div className="modeseg">
-              <button
-                className={mode === "presets" ? "on" : ""}
-                onClick={() => setMode("presets")}
-              >
-                Presets
-              </button>
-              <button
-                className={mode === "builder" ? "on" : ""}
-                onClick={() => setMode("builder")}
-              >
-                Something else? Build yours.
-              </button>
-            </div>
-
-            {mode === "presets" ? (
-              <div className="qlist">
-                {presets.map((p, i) => (
-                  <button
-                    key={p.id}
-                    className={`qitem${p.id === presetId ? " active" : ""}`}
-                    onClick={() => setPresetId(p.id)}
-                  >
-                    <span className="qnum">{String(i + 1).padStart(2, "0")}</span>
-                    <span>
-                      <span className="qtitle">{p.title}</span>
-                      <span className="qdesc" style={{ display: "block" }}>
-                        {p.note}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : catalogue ? (
-              <BuilderPanel
-                catalogue={catalogue}
-                zones={zones}
-                presets={presets}
-                draft={draft}
-                onChange={setDraft}
-              />
-            ) : (
-              <p className="runstatus">Loading the builder…</p>
-            )}
-
-            <div className="rail-block">
-              <span className="label">Range — picked on the map</span>
-              <p className="rangetext">
-                {range
-                  ? `${range[0]} → ${range[1]}`
-                  : isAudit
-                    ? "The whole archive — the audit always reads everything"
-                    : mode === "builder"
-                      ? "Whole archive"
-                      : "The preset's own range"}
-              </p>
-              <div className="chips">
-                <button
-                  className={`chip sm${range === null ? " on" : ""}`}
-                  onClick={() => setRange(null)}
-                >
-                  {mode === "builder" || isAudit ? "Whole archive" : "Preset's range"}
-                </button>
-                {last12 && (
-                  <button
-                    className="chip sm"
-                    onClick={() => setRange(last12)}
-                  >
-                    Last 12 months
-                  </button>
-                )}
-                {months.includes("2020-01") && (
-                  <button
-                    className="chip sm"
-                    onClick={() => setRange(["2020-01", "2020-12"])}
-                  >
-                    COVID — 2020
-                  </button>
-                )}
-                {months.includes("2025-01") && (
-                  <button
-                    className="chip sm"
-                    onClick={() => setRange(["2025-01", "2025-12"])}
-                  >
-                    2025
-                  </button>
-                )}
-              </div>
-              {mode === "builder" && activePreset?.spec && (
-                <p className="bhint" style={{ marginTop: 10 }}>
-                  Working from a preset?{" "}
-                  <button
-                    className="linkbtn"
-                    onClick={() => activePreset.spec && setDraft(draftFromSpec(activePreset.spec))}
-                  >
-                    Load “{activePreset.title}” into the builder
-                  </button>
-                </p>
-              )}
-            </div>
-
-            <button
-              className="runbtn"
-              onClick={run}
-              disabled={running || (gate !== null && !gate.ok)}
-            >
-              {running ? "Reading…" : "Run the question"}
-            </button>
-            <button
-              className={`freshtoggle${fresh ? " on" : ""}`}
-              onClick={() => setFresh((f) => !f)}
-              aria-pressed={fresh}
-            >
-              Fresh run — skip memory, count it live
-            </button>
-            <p className="runstatus">
-              {running && <span className="dot" />}
-              {status}
-            </p>
-            {isAudit ? (
-              <p className="gateline ok">
-                Gate — four small counts, no grouping: nothing to price.
-              </p>
-            ) : gate ? (
-              gate.ok ? (
-                <p className="gateline ok">
-                  Gate — {gate.gate?.shape} = {fmt(gate.gate?.buckets ?? 0)} buckets ·
-                  budget {fmt(gate.gate?.budget ?? 0)} ·{" "}
-                  {fmt(gate.rows_in_range ?? 0)} rows in range
-                </p>
-              ) : (
-                <p className="gateline bad">Gate — {gate.error}</p>
-              )
-            ) : null}
-          </div>
-
-          <div className="stage">
-            <RangeGrid
-              months={months}
-              monthRows={meta?.month_rows ?? {}}
-              value={range}
-              onChange={setRange}
-            />
-            <div className="runstats">
-              <div className="stat">
-                <span className="label">Wall time</span>
-                <div className="v">{stats ? `${stats.wall_seconds.toFixed(2)}s` : "—"}</div>
-              </div>
-              <div className="stat">
-                <span className="label">Peak memory</span>
-                <div className="v">{stats ? `${Math.round(stats.peak_rss_mb)} MB` : "—"}</div>
-                <div className="gauge">
-                  <div
-                    className="fill"
-                    style={{ width: stats ? `${(stats.peak_rss_mb / 2048) * 100}%` : "0%" }}
-                  />
-                  <div className="ceil" />
-                </div>
-              </div>
-              <div className="stat">
-                <span className="label">Rows scanned</span>
-                <div className="v">{stats ? fmt(stats.rows_scanned) : "—"}</div>
-              </div>
-              <div className="stat">
-                <span className="label">Files read</span>
-                <div className="v">
-                  {running
-                    ? `${filesDone} / ${filesTotal || "—"}`
-                    : stats
-                      ? `${stats.files_read} / ${stats.partitions_selected}`
-                      : "—"}
-                </div>
-              </div>
-              <div className="stat">
-                <span className="label">Throughput</span>
-                <div className="v">
-                  {stats && stats.wall_seconds > 0
-                    ? `${(stats.rows_scanned / stats.wall_seconds / 1_000_000).toFixed(1)}M /s`
-                    : "—"}
-                </div>
-              </div>
-            </div>
-
-            {payload && (
-              <div className="result">
-                <div className="result-head">
-                  <span className="idx mono" style={{ color: "var(--amber)", fontSize: 12 }}>
-                    {payload.result.kind === "audit"
-                      ? "AUDIT"
-                      : mode === "builder"
-                        ? "BUILDER"
-                        : "PRESET"}
-                  </span>
-                  <h3>{payload.result.title}</h3>
-                  {payload.cached && <span className="fromcache">From memory</span>}
-                </div>
-                {payload.result.gate && (
-                  <p className="runstatus" style={{ marginTop: 0 }}>
-                    {payload.result.gate.shape} = {fmt(payload.result.gate.buckets)}{" "}
-                    buckets · budget {fmt(payload.result.gate.budget)}
-                  </p>
-                )}
-                <div className="resultscroll">
-                  <SpecResults payload={payload} catalogue={catalogue} />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <InstrumentConsole
+          meta={meta}
+          zones={zones}
+          presets={presets}
+          catalogue={catalogue}
+          mode={mode}
+          onModeChange={setMode}
+          presetId={presetId}
+          onSelectPreset={setPresetId}
+          range={range}
+          onRangeChange={setRange}
+          draft={draft}
+          onDraftChange={setDraft}
+          effectiveSpec={effectiveSpec}
+          gate={gate}
+          running={running}
+          fresh={fresh}
+          onToggleFresh={() => setFresh((f) => !f)}
+          filesDone={filesDone}
+          filesTotal={filesTotal}
+          status={status}
+          payload={payload}
+          onRun={run}
+        />
       </section>
 
       {/* ---------- benchmarks ---------- */}
@@ -497,7 +301,7 @@ export default function App() {
           <div className="rule" />
           <span className="tail">Four moves, no magic</span>
         </div>
-        <div className="steps">
+        <div ref={methodRef} className={`steps steps-motion${methodInView ? " in" : ""}`}>
           <div className="step">
             <span className="n">STEP — 01</span>
             <h3>Partition</h3>

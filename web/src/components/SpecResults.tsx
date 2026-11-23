@@ -2,8 +2,18 @@ import type { BuilderCatalogue, SpecJobPayload, SpecRow } from "../api";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 export function fmtValue(unit: string, v: number | null | undefined): string {
@@ -16,11 +26,13 @@ export function fmtValue(unit: string, v: number | null | undefined): string {
     case "pct":
       return `${v.toFixed(1)}%`;
     case "mph":
-      return v.toFixed(1);
+      return `${v.toFixed(1)} mph`;
     case "duration_s":
       return `${(v / 60).toFixed(1)} min`;
     case "mi":
-      return Math.abs(v) >= 10000 ? fmt(Math.round(v)) : v.toFixed(2);
+      return Math.abs(v) >= 10000
+        ? `${fmt(Math.round(v))} mi`
+        : `${v.toFixed(2)} mi`;
     default:
       return v.toFixed(2);
   }
@@ -114,12 +126,14 @@ interface Props {
  * One renderer for every recipe answer. The rows are
  * self-describing; the catalogue supplies each measure's label
  * and unit. A single measure gets ranked bars; several measures
- * get a table; the junk audit gets its four verdict lines.
+ * get a table with a sticky header; the junk audit gets its four verdict lines.
  */
 export default function SpecResults({ payload, catalogue }: Props) {
   const { result } = payload;
   const rows = result.rows;
-  const payments = new Map((catalogue?.payments ?? []).map((p) => [p.id, p.label]));
+  const payments = new Map(
+    (catalogue?.payments ?? []).map((p) => [p.id, p.label]),
+  );
   const measureMeta = (id: string) =>
     catalogue?.measures.find((m) => m.id === id) ?? { label: id, unit: "plain" };
 
@@ -127,13 +141,17 @@ export default function SpecResults({ payload, catalogue }: Props) {
     const max = Math.max(...rows.map((r) => num(r, "trips") ?? 0), 1);
     return (
       <div>
-        {rows.map((r) => (
-          <div className="zrow" key={String(r.part)}>
-            <div className="rk">§</div>
+        {rows.map((r, idx) => (
+          <div className="zrow" key={String(r.part ?? idx)}>
+            <div className="rk">{String(idx + 1).padStart(2, "0")}</div>
             <div>
               <span className="zname">{str(r, "label")}</span>
               <div className="bar">
-                <i style={{ width: `${((num(r, "trips") ?? 0) / max) * 100}%` }} />
+                <i
+                  style={{
+                    width: `${((num(r, "trips") ?? 0) / max) * 100}%`,
+                  }}
+                />
               </div>
             </div>
             <div className="zv">
@@ -152,8 +170,11 @@ export default function SpecResults({ payload, catalogue }: Props) {
 
   if (rows.length === 0) {
     return (
-      <p className="mono" style={{ fontSize: 12.5, color: "var(--bone-dim)" }}>
-        No trips matched — the filters excluded everything in this range.
+      <p
+        className="mono"
+        style={{ fontSize: 12.5, color: "var(--bone-dim)", padding: "18px 0" }}
+      >
+        No trips matched — the active filters excluded every trip in this range.
       </p>
     );
   }
@@ -190,9 +211,10 @@ export default function SpecResults({ payload, catalogue }: Props) {
 
   const maxFirst = Math.max(...rows.map((r) => num(r, first) ?? 0), 1);
   return (
-    <table className="ptable">
+    <table className="ptable ptable-v2">
       <thead>
         <tr>
+          <th style={{ width: 42 }}>#</th>
           <th>Group</th>
           {measures.map((m) => (
             <th className="num" key={m}>
@@ -206,10 +228,15 @@ export default function SpecResults({ payload, catalogue }: Props) {
           const { main, sub } = rowLabel(r, dims, payments);
           return (
             <tr key={i}>
+              <td className="mono ptable-idx">
+                {String(i + 1).padStart(2, "0")}
+              </td>
               <td className="who">
-                {main}
-                {sub && <span className="zsub"> — {sub}</span>}
-                <div className="tipbar">
+                <div className="who-line">
+                  <span>{main}</span>
+                  {sub && <span className="zsub"> · {sub}</span>}
+                </div>
+                <div className="tipbar tipbar-left">
                   <i
                     style={{
                       width: `${((num(r, first) ?? 0) / maxFirst) * 100}%`,

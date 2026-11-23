@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { BenchSuite, LiveRun } from "../api";
+import { useInView } from "../utils/motion";
 
 const CEILING = 2048;
 
@@ -144,19 +145,19 @@ export default function Benchmarks({ suites, live, onShowLive }: Props) {
 }
 
 function Charts({ rows }: { rows: Row[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, 0.15);
   const walls = rows.map((r) => r.wall).filter((v): v is number => v !== undefined);
   const peaks = rows.map((r) => r.peak).filter((v): v is number => v !== undefined);
   const maxTime = walls.length ? Math.max(...walls) : 1;
   const maxMem = Math.max(CEILING, ...peaks) * 1.06;
-  // Gold is earned per chart: the lowest present value wins it.
-  // A missing value (a live run that hasn't happened) never can.
   const minWall = walls.length ? Math.min(...walls) : Infinity;
   const minPeak = peaks.length ? Math.min(...peaks) : Infinity;
   return (
-    <div className="bcharts">
+    <div ref={ref} className={`bcharts${inView ? " bars-in" : ""}`}>
       <div className="bchart">
         <span className="label">Wall time — seconds, lower wins</span>
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <div
             className={`brow${r.wall !== undefined && r.wall === minWall ? " win" : ""}`}
             key={r.id}
@@ -164,8 +165,11 @@ function Charts({ rows }: { rows: Row[] }) {
             <div className="eng">{r.label}</div>
             <div className="track">
               <div
-                className="fill"
-                style={{ width: r.wall !== undefined ? `${(r.wall / maxTime) * 100}%` : "0%" }}
+                className="fill anim-bar"
+                style={{
+                  width: r.wall !== undefined ? `${(r.wall / maxTime) * 100}%` : "0%",
+                  transitionDelay: `${i * 90}ms`,
+                }}
               />
             </div>
             <div className="val">{r.wall !== undefined ? `${r.wall.toFixed(2)}s` : "—"}</div>
@@ -174,7 +178,7 @@ function Charts({ rows }: { rows: Row[] }) {
       </div>
       <div className="bchart">
         <span className="label">Peak memory — MB, ceiling 2,048</span>
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           const over = r.peak !== undefined && r.peak > CEILING;
           return (
             <div
@@ -184,8 +188,11 @@ function Charts({ rows }: { rows: Row[] }) {
               <div className="eng">{r.label}</div>
               <div className="track">
                 <div
-                  className={`fill${over ? " over" : ""}`}
-                  style={{ width: r.peak !== undefined ? `${(r.peak / maxMem) * 100}%` : "0%" }}
+                  className={`fill anim-bar${over ? " over" : ""}`}
+                  style={{
+                    width: r.peak !== undefined ? `${(r.peak / maxMem) * 100}%` : "0%",
+                    transitionDelay: `${i * 90 + 120}ms`,
+                  }}
                 />
                 <div
                   style={{

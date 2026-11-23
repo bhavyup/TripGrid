@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { tripgridDevApiFallback } from "./dev-api-fallback";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tripgridDevApiFallback()],
   server: {
     proxy: {
       "/api": "http://127.0.0.1:8000",
