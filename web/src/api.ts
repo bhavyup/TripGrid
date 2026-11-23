@@ -6,11 +6,24 @@ export interface QueryInfo {
   description: string;
 }
 
+export interface FreshnessStatus {
+  checked_at?: string;
+  new_months?: string[];
+  republished?: string[];
+  updated?: string[];
+  error?: string;
+}
+
 export interface Meta {
   years: number[];
+  months: string[];
+  month_rows: Record<string, number>;
+  newest_month: string | null;
   queries: QueryInfo[];
   partitions: number;
   total_rows: number;
+  archive_bytes: number;
+  freshness: FreshnessStatus | null;
   ceiling_mb: number;
   workers: number;
   cache: { entries: number; bytes: number; budget_bytes: number };
@@ -45,6 +58,8 @@ export interface RunStats {
   partitions_total: number;
   partitions_selected: number;
   partitions_pruned: number;
+  rows_total?: number;
+  rows_selected?: number;
   rows_scanned: number;
   files_read: number;
   wall_seconds: number;
@@ -118,9 +133,90 @@ export interface LiveRun {
   last_run_at: string;
 }
 
+/* ---------------- TripGrid 2.0: recipes ---------------- */
+
+export interface SpecDict {
+  range: [string, string] | "all";
+  measures: string[];
+  dimensions: string[];
+  filters: Record<string, unknown>;
+  top_k?: number | null;
+  sort?: string;
+}
+
+export interface PresetInfo {
+  id: string;
+  title: string;
+  note: string;
+  kind: "spec" | "audit";
+  spec?: SpecDict;
+  parts?: { name: string; label: string }[];
+}
+
+export interface GateReport {
+  buckets: number;
+  budget: number;
+  shape: string;
+}
+
+export interface ValidateResult {
+  ok: boolean;
+  error?: string;
+  gate?: GateReport;
+  months?: number;
+  rows_in_range?: number;
+  partitions_in_range?: number;
+  spec?: SpecDict;
+}
+
+export interface BuilderCatalogue {
+  measures: { id: string; label: string; unit: string; percentile: boolean }[];
+  dimensions: { id: string; label: string; cardinality: number | null }[];
+  filters: { id: string; label: string; kind: string }[];
+  boroughs: string[];
+  payments: { id: number; label: string }[];
+  max_buckets: number;
+  max_pctl_groups: number;
+}
+
+export type SpecRow = Record<string, string | number | boolean | null>;
+
+export interface SpecResultPayload {
+  kind: "spec" | "preset" | "audit";
+  title: string;
+  rows: SpecRow[];
+  spec: SpecDict | null;
+  gate: GateReport | null;
+}
+
+export interface SpecJobPayload {
+  result: SpecResultPayload;
+  stats: RunStats;
+  cached: boolean;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`${url} -> ${resp.status}`);
+  return (await resp.json()) as T;
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = `${url} -> ${resp.status}`;
+    try {
+      const parsed = (await resp.json()) as { detail?: string };
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      /* keep the status line */
+    }
+    throw new Error(detail);
+  }
   return (await resp.json()) as T;
 }
 
@@ -132,6 +228,96 @@ export const fetchLive = () =>
   getJson<Record<string, Record<string, LiveRun>>>("/api/live");
 export const fetchPlan = (query: string, year: number) =>
   getJson<Plan>(`/api/plan?query=${query}&year=${year}`);
+export const fetchPresets = () => getJson<PresetInfo[]>("/api/presets");
+export const fetchBuilder = () => getJson<BuilderCatalogue>("/api/builder");
+export const validateSpec = (spec: SpecDict) =>
+  postJson<ValidateResult>("/api/spec/validate", { spec });
+
+interface StartedJob {
+  cached: boolean;
+  job_id: string | null;
+  result?: unknown;
+  stats?: RunStats;
+}
+
+interface JobBody {
+  status: string;
+  result?: unknown;
+  stats?: RunStats;
+  error?: string;
+}
+
+/**
+ * Waits for a started job: progress streams over SSE (files
+ * finished / files total), a slow poll backs it up in case the
+ * stream is interrupted.
+ */
+function awaitJob(
+  jobId: string,
+  onProgress: (done: number, total: number) => void,
+): Promise<{ result: unknown; stats: RunStats }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (body: JobBody) => {
+      if (settled) return;
+      if (body.status === "done" && body.stats) {
+        settled = true;
+        cleanup();
+        resolve({ result: body.result, stats: body.stats });
+      } else if (body.status === "error") {
+        settled = true;
+        cleanup();
+        reject(new Error(body.error ?? "job failed"));
+      }
+    };
+    const poll = window.setInterval(async () => {
+      try {
+        finish(await getJson<JobBody>(`/api/jobs/${jobId}`));
+      } catch {
+        /* keep polling */
+      }
+    }, 900);
+    const es = new EventSource(`/api/jobs/${jobId}/events`);
+    es.onmessage = (ev) => {
+      try {
+        const event = JSON.parse(ev.data) as {
+          type: string;
+          done?: number;
+          total?: number;
+        };
+        if (event.type === "progress" && event.done != null && event.total != null) {
+          onProgress(event.done, event.total);
+        } else if (event.type === "done" || event.type === "error") {
+          getJson<JobBody>(`/api/jobs/${jobId}`)
+            .then(finish)
+            .catch(() => undefined);
+        }
+      } catch {
+        /* malformed event: ignore */
+      }
+    };
+    es.onerror = () => {
+      /* the poll is the safety net */
+    };
+    const cleanup = () => {
+      window.clearInterval(poll);
+      es.close();
+    };
+  });
+}
+
+async function startAndAwait(
+  url: string,
+  body: unknown,
+  onProgress: (done: number, total: number) => void,
+): Promise<{ result: unknown; stats: RunStats; cached: boolean }> {
+  const started = await postJson<StartedJob>(url, body);
+  if (started.cached && started.stats) {
+    return { result: started.result, stats: started.stats, cached: true };
+  }
+  const final = await awaitJob(started.job_id as string, onProgress);
+  return { ...final, cached: false };
+}
 
 function shape(query: string, raw: { result: never; stats: RunStats }): ResultPayload {
   if (query === "q1") {
@@ -142,95 +328,54 @@ function shape(query: string, raw: { result: never; stats: RunStats }): ResultPa
   return { kind: query, rows: r.rows } as ResultPayload;
 }
 
-/**
- * Runs a query through the job API. Progress (files finished /
- * files total) streams over SSE; a slow poll backs it up in case
- * the stream is interrupted. Resolves with the shaped payload.
- */
+/** Runs one of the original four questions through the job API. */
 export async function runQuery(
   query: string,
   year: number,
   onProgress: (done: number, total: number) => void,
   fresh = false,
 ): Promise<JobPayload> {
-  const resp = await fetch("/api/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, year, fresh }),
-  });
-  if (!resp.ok) throw new Error(`start query -> ${resp.status}`);
-  const started = (await resp.json()) as {
-    cached: boolean;
-    job_id: string | null;
-    result?: never;
-    stats?: RunStats;
-  };
-  if (started.cached && started.stats) {
-    return {
-      result: shape(query, started as unknown as { result: never; stats: RunStats }),
-      stats: started.stats,
-      cached: true,
-    };
-  }
-  const jobId = started.job_id as string;
-
-  const final = await new Promise<{ result: never; stats: RunStats }>(
-    (resolve, reject) => {
-      let settled = false;
-      const finish = (body: { status: string; result?: never; stats?: RunStats; error?: string }) => {
-        if (settled) return;
-        if (body.status === "done" && body.stats) {
-          settled = true;
-          cleanup();
-          resolve({ result: body.result as never, stats: body.stats });
-        } else if (body.status === "error") {
-          settled = true;
-          cleanup();
-          reject(new Error(body.error ?? "job failed"));
-        }
-      };
-      const poll = window.setInterval(async () => {
-        try {
-          const body = await getJson<{
-            status: string;
-            result?: never;
-            stats?: RunStats;
-            error?: string;
-          }>(`/api/jobs/${jobId}`);
-          finish(body);
-        } catch {
-          /* keep polling */
-        }
-      }, 900);
-      const es = new EventSource(`/api/jobs/${jobId}/events`);
-      es.onmessage = (ev) => {
-        try {
-          const event = JSON.parse(ev.data) as {
-            type: string;
-            done?: number;
-            total?: number;
-          };
-          if (event.type === "progress" && event.done != null && event.total != null) {
-            onProgress(event.done, event.total);
-          } else if (event.type === "done" || event.type === "error") {
-            getJson<{ status: string; result?: never; stats?: RunStats; error?: string }>(
-              `/api/jobs/${jobId}`,
-            )
-              .then(finish)
-              .catch(() => undefined);
-          }
-        } catch {
-          /* malformed event: ignore */
-        }
-      };
-      es.onerror = () => {
-        /* the poll is the safety net */
-      };
-      const cleanup = () => {
-        window.clearInterval(poll);
-        es.close();
-      };
-    },
+  const out = await startAndAwait(
+    "/api/query",
+    { query, year, fresh },
+    onProgress,
   );
-  return { result: shape(query, final), stats: final.stats, cached: false };
+  return {
+    result: shape(query, out as unknown as { result: never; stats: RunStats }),
+    stats: out.stats,
+    cached: out.cached,
+  };
+}
+
+/** Runs a hand-built recipe from the Question Builder. */
+export async function runSpec(
+  spec: SpecDict,
+  onProgress: (done: number, total: number) => void,
+  fresh = false,
+): Promise<SpecJobPayload> {
+  const out = await startAndAwait("/api/spec/run", { spec, fresh }, onProgress);
+  return {
+    result: out.result as SpecResultPayload,
+    stats: out.stats,
+    cached: out.cached,
+  };
+}
+
+/** Runs a preset; range overrides the preset's own when given. */
+export async function runPreset(
+  name: string,
+  range: [string, string] | null,
+  onProgress: (done: number, total: number) => void,
+  fresh = false,
+): Promise<SpecJobPayload> {
+  const out = await startAndAwait(
+    "/api/preset/run",
+    { name, range, fresh },
+    onProgress,
+  );
+  return {
+    result: out.result as SpecResultPayload,
+    stats: out.stats,
+    cached: out.cached,
+  };
 }

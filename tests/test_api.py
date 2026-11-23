@@ -124,3 +124,115 @@ def test_errors(client):
     assert client.post("/api/query", json={"query": "q9", "year": 2024}).status_code == 400
     assert client.post("/api/query", json={"query": "q1", "year": 1999}).status_code == 400
     assert client.get("/api/jobs/nope").status_code == 404
+
+
+# ------------------------------------------------------------------
+# TripGrid 2.0: presets, the builder catalogue, recipe validation
+# and runs. Known answers come from the Step 1/Step 3 verification
+# work (Dec 2022 borough counts; Q3 2024's top row).
+
+def test_meta_archive_fields(client):
+    body = client.get("/api/meta").json()
+    assert body["months"], "meta must list the indexed months"
+    assert body["newest_month"] == body["months"][-1]
+    assert body["archive_bytes"] > 0
+    assert "freshness" in body
+    assert sum(body["month_rows"].values()) == body["total_rows"]
+
+
+def test_presets_eleven_in_order(client):
+    body = client.get("/api/presets").json()
+    assert len(body) == 11
+    assert body[0]["id"] == "congestion_verdict"
+    audit = body[-1]
+    assert audit["id"] == "junk_audit" and audit["kind"] == "audit"
+    assert len(audit["parts"]) == 4
+
+
+def test_builder_catalogue(client):
+    body = client.get("/api/builder").json()
+    measure_ids = {m["id"] for m in body["measures"]}
+    assert {"trips", "avg_speed", "p50_fare"} <= measure_ids
+    dim_ids = {d["id"] for d in body["dimensions"]}
+    assert {"route", "hour_weekday", "pu_zone"} <= dim_ids
+    assert body["max_buckets"] == 500_000
+    assert body["max_pctl_groups"] == 128
+
+
+def test_spec_validate_ok_and_gate_refusal(client):
+    ok = client.post(
+        "/api/spec/validate",
+        json={"spec": {
+            "range": ["2022-12", "2022-12"],
+            "measures": ["trips"],
+            "dimensions": ["pu_borough"],
+        }},
+    ).json()
+    assert ok["ok"] is True
+    assert ok["gate"]["buckets"] == 8
+    assert ok["months"] == 1
+    refused = client.post(
+        "/api/spec/validate",
+        json={"spec": {
+            "range": "all",
+            "measures": ["trips"],
+            "dimensions": ["route", "month"],
+        }},
+    ).json()
+    assert refused["ok"] is False
+    assert "budget" in refused["error"]
+
+
+def test_spec_run_known_answer(client):
+    spec = {
+        "range": ["2022-12", "2022-12"],
+        "measures": ["trips"],
+        "dimensions": ["pu_borough"],
+    }
+    started = client.post("/api/spec/run", json={"spec": spec}).json()
+    assert started["cached"] is False
+    body = _wait_done(client, started["job_id"])
+    assert body["status"] == "done"
+    assert body["kind"] == "spec"
+    rows = {r["pu_borough"]: r["trips"] for r in body["result"]["rows"]}
+    assert rows["Manhattan"] == 3_002_076
+    assert body["stats"]["files_read"] > 0
+    assert body["stats"]["wall_seconds"] > 0
+    again = client.post("/api/spec/run", json={"spec": spec}).json()
+    assert again["cached"] is True
+
+
+def test_preset_run_matches_q3_truth(client):
+    started = client.post(
+        "/api/preset/run",
+        json={"name": "friday_manhattan", "range": ["2024-01", "2024-12"]},
+    ).json()
+    assert started["cached"] is False
+    body = _wait_done(client, started["job_id"], timeout_s=120)
+    assert body["status"] == "done"
+    top = body["result"]["rows"][0]
+    assert top["do_zone"] == 236 and top["trips"] == 92_200
+    assert body["result"]["title"].startswith("Friday-evening")
+    # The preset IS Q3, and it ran over exactly 2024 — so it counts
+    # as Q3's live run in the Evidence section, with its own stats.
+    live = client.get("/api/live").json()
+    rec = live["2024"]["q3"]
+    assert rec["rows_scanned"] == body["stats"]["rows_scanned"]
+    assert rec["wall_seconds"] > 0
+
+
+def test_preset_and_spec_run_errors(client):
+    assert client.post(
+        "/api/preset/run", json={"name": "nope"}
+    ).status_code == 400
+    # Fare percentiles grouped by route: 70,756 groups is over the
+    # 128-group percentile budget — refused before any job exists.
+    bad = client.post(
+        "/api/spec/run",
+        json={"spec": {
+            "range": "all",
+            "measures": ["p50_fare"],
+            "dimensions": ["route"],
+        }},
+    )
+    assert bad.status_code == 400

@@ -258,3 +258,31 @@ def test_duckdb_junk_audit_2024():
     """)
     assert paid[0]["trips"] == int(ref[0][0])
     assert paid[0]["sum_fare"] == pytest.approx(float(ref[0][1]), rel=1e-9)
+
+
+def test_audit_preset_accumulates_part_stats():
+    # Regression: run_preset's audit branch totals the parts'
+    # stats, and it read part_stats["wall_s"] while run_spec's
+    # pool path only published "wall_seconds" — the audit died
+    # with KeyError the first time it ran end to end (Step 3c,
+    # found live; the Step 1 gate had only exercised the parts
+    # individually via run_spec). The parts are narrowed to one
+    # month here so the test stays fast; the branch under test
+    # is identical.
+    import copy
+
+    from engine.spec import PRESETS
+
+    narrowed = copy.deepcopy(PRESETS["junk_audit"])
+    for part in narrowed["parts"]:
+        part["spec"]["range"] = ["2024-01", "2024-01"]
+    PRESETS["_audit_test"] = narrowed
+    try:
+        rows, stats = run_preset("_audit_test")
+    finally:
+        del PRESETS["_audit_test"]
+    assert [r["part"] for r in rows] == [p["name"] for p in narrowed["parts"]]
+    assert stats["kind"] == "audit"
+    assert stats["wall_s"] > 0
+    assert stats["partitions_selected"] == 32
+    assert stats["rows_scanned"] == 4 * 2_964_606

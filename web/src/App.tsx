@@ -1,20 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBenchmarks,
+  fetchBuilder,
   fetchLive,
   fetchMeta,
-  fetchPlan,
+  fetchPresets,
   fetchZones,
-  runQuery,
+  runPreset,
+  runSpec,
+  validateSpec,
   type BenchSuite,
-  type JobPayload,
+  type BuilderCatalogue,
   type LiveRun,
   type Meta,
-  type Plan,
+  type PresetInfo,
+  type SpecDict,
+  type SpecJobPayload,
+  type ValidateResult,
   type ZoneMap,
 } from "./api";
-import PartitionGrid from "./components/PartitionGrid";
-import Results from "./components/Results";
+import RangeGrid from "./components/RangeGrid";
+import BuilderPanel, {
+  draftFromSpec,
+  type BuilderDraft,
+} from "./components/BuilderPanel";
+import SpecResults from "./components/SpecResults";
 import Benchmarks from "./components/Benchmarks";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -24,15 +34,27 @@ export default function App() {
   const [zones, setZones] = useState<ZoneMap>({});
   const [suites, setSuites] = useState<Record<string, BenchSuite>>({});
   const [live, setLive] = useState<Record<string, Record<string, LiveRun>>>({});
-  const [query, setQuery] = useState("q3");
-  const [year, setYear] = useState(2025);
-  const [plan, setPlan] = useState<Plan | null>(null);
+  const [presets, setPresets] = useState<PresetInfo[]>([]);
+  const [catalogue, setCatalogue] = useState<BuilderCatalogue | null>(null);
+
+  const [mode, setMode] = useState<"presets" | "builder">("presets");
+  const [presetId, setPresetId] = useState("congestion_verdict");
+  const [range, setRange] = useState<[string, string] | null>(null);
+  const [draft, setDraft] = useState<BuilderDraft>({
+    measures: ["trips"],
+    dimensions: ["month"],
+    filters: {},
+    top_k: null,
+    sort: "key",
+  });
+  const [gate, setGate] = useState<ValidateResult | null>(null);
   const [running, setRunning] = useState(false);
   const [fresh, setFresh] = useState(false);
   const [filesDone, setFilesDone] = useState(0);
+  const [filesTotal, setFilesTotal] = useState(0);
   const [status, setStatus] = useState("Idle — pick a question and run it");
-  const [payload, setPayload] = useState<JobPayload | null>(null);
-  const cacheRef = useRef(new Map<string, JobPayload>());
+  const [payload, setPayload] = useState<SpecJobPayload | null>(null);
+  const cacheRef = useRef(new Map<string, SpecJobPayload>());
 
   const refreshLive = useCallback(() => {
     fetchLive().then(setLive).catch(() => undefined);
@@ -42,46 +64,98 @@ export default function App() {
     fetchMeta().then(setMeta).catch(() => undefined);
     fetchZones().then(setZones).catch(() => undefined);
     fetchBenchmarks().then(setSuites).catch(() => undefined);
+    fetchPresets().then(setPresets).catch(() => undefined);
+    fetchBuilder().then(setCatalogue).catch(() => undefined);
     refreshLive();
   }, [refreshLive]);
 
+  const activePreset = presets.find((p) => p.id === presetId);
+  const isAudit = activePreset?.kind === "audit";
+
+  /** The recipe the current controls describe — a preset with the
+   * map's range laid over it, or the builder's draft. The audit
+   * has no single recipe (four small counts), so it has none. */
+  const effectiveSpec: SpecDict | null = useMemo(() => {
+    if (mode === "builder") {
+      return {
+        range: range ?? "all",
+        measures: draft.measures,
+        dimensions: draft.dimensions,
+        filters: draft.filters,
+        top_k: draft.top_k,
+        sort: draft.sort,
+      };
+    }
+    if (!activePreset || isAudit || !activePreset.spec) return null;
+    return { ...activePreset.spec, range: range ?? activePreset.spec.range };
+  }, [mode, draft, range, activePreset, isAudit]);
+
+  const signature =
+    mode === "builder"
+      ? `spec:${JSON.stringify(effectiveSpec)}`
+      : `preset:${presetId}:${range ? range.join("..") : "default"}`;
+
+  // Price the current recipe as the controls move — the gate line
+  // under the Run button is this verdict, always live.
   useEffect(() => {
+    if (!effectiveSpec) {
+      setGate(null);
+      return;
+    }
     let live = true;
-    setPlan(null);
-    fetchPlan(query, year)
-      .then((p) => {
-        if (live) setPlan(p);
-      })
-      .catch(() => undefined);
-    // Show a remembered answer instantly when switching back.
-    const remembered = cacheRef.current.get(`${query}:${year}`);
+    const t = window.setTimeout(() => {
+      validateSpec(effectiveSpec)
+        .then((g) => {
+          if (live) setGate(g);
+        })
+        .catch(() => undefined);
+    }, 300);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [effectiveSpec]);
+
+  // Show a remembered answer instantly when switching back.
+  useEffect(() => {
+    const remembered = cacheRef.current.get(signature);
     setPayload(remembered ?? null);
     setFilesDone(remembered ? (remembered.stats.files_read ?? 0) : 0);
+    setFilesTotal(remembered ? remembered.stats.partitions_selected : 0);
     setStatus(
       remembered
         ? "Answered from memory — the engine keeps recent answers"
         : "Idle — pick a question and run it",
     );
-    return () => {
-      live = false;
-    };
-  }, [query, year]);
+  }, [signature]);
 
   const run = useCallback(async () => {
     if (running) return;
+    if (mode === "presets" && !activePreset) return;
+    if (mode === "builder" && !effectiveSpec) return;
+    if (gate && !gate.ok) return;
     setRunning(true);
     setPayload(null);
     setFilesDone(0);
+    setFilesTotal(0);
     setStatus("Reading — the engine is scanning the selected files");
+    const prog = (done: number, total: number) => {
+      setFilesDone(done);
+      setFilesTotal(total);
+    };
     try {
-      const result = await runQuery(query, year, (done) => setFilesDone(done), fresh);
-      cacheRef.current.set(`${query}:${year}`, result);
+      const result =
+        mode === "builder"
+          ? await runSpec(effectiveSpec as SpecDict, prog, fresh)
+          : await runPreset(presetId, isAudit ? null : range, prog, fresh);
+      cacheRef.current.set(signature, result);
       setPayload(result);
-      // A real execution just landed on the server — pull the
-      // updated live record for the Evidence section. Cache
-      // answers change nothing there.
-      if (!result.cached) refreshLive();
+      // A real preset execution may have landed in the Evidence
+      // section's Live view (the four original questions, run over
+      // exactly one year, count as live runs there).
+      if (!result.cached && mode === "presets") refreshLive();
       setFilesDone(result.stats.files_read ?? 0);
+      setFilesTotal(result.stats.partitions_selected);
       setStatus(
         result.cached
           ? "Answered from memory — no file was re-read"
@@ -92,11 +166,25 @@ export default function App() {
     } finally {
       setRunning(false);
     }
-  }, [query, year, running, fresh, refreshLive]);
+  }, [running, mode, activePreset, effectiveSpec, gate, presetId, isAudit, range, fresh, signature, refreshLive]);
 
   const stats = payload?.stats;
-  const queries = meta?.queries ?? [];
-  const activeQuery = queries.find((q) => q.id === query);
+  const months = meta?.months ?? [];
+  const last12: [string, string] | null =
+    months.length >= 12 ? [months[months.length - 12], months[months.length - 1]] : null;
+
+  const freshness = meta?.freshness;
+  const freshnessLine = !freshness
+    ? null
+    : freshness.error
+      ? "Freshness — the last check could not reach the city feed"
+      : freshness.checked_at
+        ? `Freshness — checked ${new Date(freshness.checked_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · ${
+            freshness.updated && freshness.updated.length > 0
+              ? `${freshness.updated.length} month${freshness.updated.length > 1 ? "s" : ""} brought up to date`
+              : "archive up to date"
+          }`
+        : null;
 
   return (
     <div className="frame">
@@ -110,7 +198,9 @@ export default function App() {
           <a href="#evidence">Evidence</a>
           <a href="#method">Method</a>
         </nav>
-        <div className="topmeta">NYC TLC Yellow — 2024 / 2025</div>
+        <div className="topmeta">
+          NYC TLC Yellow — {meta ? `${meta.years[0]} / ${meta.years[meta.years.length - 1]}` : "2017 / 2026"}
+        </div>
       </header>
 
       {/* ---------- hero ---------- */}
@@ -120,7 +210,7 @@ export default function App() {
         </p>
         <div className="hero-grid">
           <h1 className="display">
-            Ninety million
+            Half a billion
             <br />
             trips.
             <br />
@@ -133,30 +223,31 @@ export default function App() {
           <aside className="hero-side">
             <span className="label">What this is</span>
             <p>
-              TripGrid answers questions over <strong>89.9 million taxi trips</strong> while
-              never holding more than <strong>2 GB in memory</strong> — a ceiling a standard
+              TripGrid answers questions over <strong>half a billion taxi trips</strong> —
+              every yellow-cab ride the city has published since 2017 — while never
+              holding more than <strong>2 GB in memory</strong>, a ceiling a standard
               engine breaks on the hardest question. Every answer is{" "}
-              <strong>checked against DuckDB</strong> before it is believed, and where DuckDB
-              is faster, this page says so.
+              <strong>checked against DuckDB</strong> before it is believed, and where
+              DuckDB is faster, this page says so.
             </p>
           </aside>
         </div>
         <div className="statstrip">
           <div className="stat">
             <span className="label">Trips indexed</span>
-            <div className="v">{meta ? fmt(meta.total_rows) : "89,891,688"}</div>
+            <div className="v">{meta ? fmt(meta.total_rows) : "—"}</div>
           </div>
           <div className="stat">
             <span className="label">Partitions</span>
-            <div className="v">{meta ? meta.partitions : 192} files</div>
+            <div className="v">{meta ? `${meta.partitions} files` : "—"}</div>
           </div>
           <div className="stat">
             <span className="label">Memory ceiling</span>
             <div className="v">2,048 MB</div>
           </div>
           <div className="stat">
-            <span className="label">Questions</span>
-            <div className="v">04</div>
+            <span className="label">Preset questions</span>
+            <div className="v">11</div>
           </div>
           <div className="stat">
             <span className="label">Engines raced</span>
@@ -176,36 +267,112 @@ export default function App() {
 
         <div className="console">
           <div>
-            <div className="qlist">
-              {queries.map((q, i) => (
-                <button
-                  key={q.id}
-                  className={`qitem${q.id === query ? " active" : ""}`}
-                  onClick={() => setQuery(q.id)}
-                >
-                  <span className="qnum">{String(i + 1).padStart(2, "0")}</span>
-                  <span>
-                    <span className="qtitle">{q.title}</span>
-                    <span className="qdesc" style={{ display: "block" }}>
-                      {q.description}
-                    </span>
-                  </span>
-                </button>
-              ))}
+            <div className="modeseg">
+              <button
+                className={mode === "presets" ? "on" : ""}
+                onClick={() => setMode("presets")}
+              >
+                Presets
+              </button>
+              <button
+                className={mode === "builder" ? "on" : ""}
+                onClick={() => setMode("builder")}
+              >
+                Something else? Build yours.
+              </button>
             </div>
 
-            <div className="rail-block">
-              <span className="label">Year</span>
-              <div className="yearseg">
-                {(meta?.years ?? [2024, 2025]).map((y) => (
-                  <button key={y} className={y === year ? "on" : ""} onClick={() => setYear(y)}>
-                    {y}
+            {mode === "presets" ? (
+              <div className="qlist">
+                {presets.map((p, i) => (
+                  <button
+                    key={p.id}
+                    className={`qitem${p.id === presetId ? " active" : ""}`}
+                    onClick={() => setPresetId(p.id)}
+                  >
+                    <span className="qnum">{String(i + 1).padStart(2, "0")}</span>
+                    <span>
+                      <span className="qtitle">{p.title}</span>
+                      <span className="qdesc" style={{ display: "block" }}>
+                        {p.note}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>
+            ) : catalogue ? (
+              <BuilderPanel
+                catalogue={catalogue}
+                zones={zones}
+                presets={presets}
+                draft={draft}
+                onChange={setDraft}
+              />
+            ) : (
+              <p className="runstatus">Loading the builder…</p>
+            )}
+
+            <div className="rail-block">
+              <span className="label">Range — picked on the map</span>
+              <p className="rangetext">
+                {range
+                  ? `${range[0]} → ${range[1]}`
+                  : isAudit
+                    ? "The whole archive — the audit always reads everything"
+                    : mode === "builder"
+                      ? "Whole archive"
+                      : "The preset's own range"}
+              </p>
+              <div className="chips">
+                <button
+                  className={`chip sm${range === null ? " on" : ""}`}
+                  onClick={() => setRange(null)}
+                >
+                  {mode === "builder" || isAudit ? "Whole archive" : "Preset's range"}
+                </button>
+                {last12 && (
+                  <button
+                    className="chip sm"
+                    onClick={() => setRange(last12)}
+                  >
+                    Last 12 months
+                  </button>
+                )}
+                {months.includes("2020-01") && (
+                  <button
+                    className="chip sm"
+                    onClick={() => setRange(["2020-01", "2020-12"])}
+                  >
+                    COVID — 2020
+                  </button>
+                )}
+                {months.includes("2025-01") && (
+                  <button
+                    className="chip sm"
+                    onClick={() => setRange(["2025-01", "2025-12"])}
+                  >
+                    2025
+                  </button>
+                )}
+              </div>
+              {mode === "builder" && activePreset?.spec && (
+                <p className="bhint" style={{ marginTop: 10 }}>
+                  Working from a preset?{" "}
+                  <button
+                    className="linkbtn"
+                    onClick={() => activePreset.spec && setDraft(draftFromSpec(activePreset.spec))}
+                  >
+                    Load “{activePreset.title}” into the builder
+                  </button>
+                </p>
+              )}
             </div>
 
-            <button className="runbtn" onClick={run} disabled={running}>
+            <button
+              className="runbtn"
+              onClick={run}
+              disabled={running || (gate !== null && !gate.ok)}
+            >
               {running ? "Reading…" : "Run the question"}
             </button>
             <button
@@ -219,17 +386,30 @@ export default function App() {
               {running && <span className="dot" />}
               {status}
             </p>
-            {plan && (
-              <p className="runstatus" style={{ color: "var(--bone-faint)" }}>
-                Plan — reads {plan.stats.partitions_selected} of {plan.stats.partitions_total}{" "}
-                files · skips {fmt(plan.stats.rows_total - plan.stats.rows_selected)} rows
-                without opening them
+            {isAudit ? (
+              <p className="gateline ok">
+                Gate — four small counts, no grouping: nothing to price.
               </p>
-            )}
+            ) : gate ? (
+              gate.ok ? (
+                <p className="gateline ok">
+                  Gate — {gate.gate?.shape} = {fmt(gate.gate?.buckets ?? 0)} buckets ·
+                  budget {fmt(gate.gate?.budget ?? 0)} ·{" "}
+                  {fmt(gate.rows_in_range ?? 0)} rows in range
+                </p>
+              ) : (
+                <p className="gateline bad">Gate — {gate.error}</p>
+              )
+            ) : null}
           </div>
 
           <div className="stage">
-            <PartitionGrid plan={plan} year={year} filesDone={filesDone} running={running} />
+            <RangeGrid
+              months={months}
+              monthRows={meta?.month_rows ?? {}}
+              value={range}
+              onChange={setRange}
+            />
             <div className="runstats">
               <div className="stat">
                 <span className="label">Wall time</span>
@@ -254,7 +434,7 @@ export default function App() {
                 <span className="label">Files read</span>
                 <div className="v">
                   {running
-                    ? `${filesDone} / ${plan?.stats.partitions_selected ?? "—"}`
+                    ? `${filesDone} / ${filesTotal || "—"}`
                     : stats
                       ? `${stats.files_read} / ${stats.partitions_selected}`
                       : "—"}
@@ -270,17 +450,27 @@ export default function App() {
               </div>
             </div>
 
-            {payload && activeQuery && (
+            {payload && (
               <div className="result">
                 <div className="result-head">
                   <span className="idx mono" style={{ color: "var(--amber)", fontSize: 12 }}>
-                    {query.toUpperCase()}
+                    {payload.result.kind === "audit"
+                      ? "AUDIT"
+                      : mode === "builder"
+                        ? "BUILDER"
+                        : "PRESET"}
                   </span>
-                  <h3>{activeQuery.title}</h3>
+                  <h3>{payload.result.title}</h3>
                   {payload.cached && <span className="fromcache">From memory</span>}
                 </div>
+                {payload.result.gate && (
+                  <p className="runstatus" style={{ marginTop: 0 }}>
+                    {payload.result.gate.shape} = {fmt(payload.result.gate.buckets)}{" "}
+                    buckets · budget {fmt(payload.result.gate.budget)}
+                  </p>
+                )}
                 <div className="resultscroll">
-                  <Results payload={payload} zones={zones} />
+                  <SpecResults payload={payload} catalogue={catalogue} />
                 </div>
               </div>
             )}
@@ -312,8 +502,9 @@ export default function App() {
             <span className="n">STEP — 01</span>
             <h3>Partition</h3>
             <p>
-              Two years of trips are cut into 192 files by month and pickup borough, with a
-              small index recording each file's size and shape. Nothing is ever loaded whole.
+              Every month of trips the city publishes is cut into files by pickup
+              borough, in a slim exact format, with a small index recording each
+              file's row count and fare range. Nothing is ever loaded whole.
             </p>
           </div>
           <div className="step">
@@ -321,8 +512,8 @@ export default function App() {
             <h3>Prune</h3>
             <p>
               Before reading a single row, the planner consults only the index and crosses
-              out every file the question cannot need. Most questions never open most of the
-              city.
+              out every file the question cannot need. Most questions never open most of
+              the city.
             </p>
           </div>
           <div className="step">
@@ -350,6 +541,14 @@ export default function App() {
         <span className="label">TripGrid — an engine that answers to a ceiling</span>
         <span className="label">Data — NYC TLC Yellow Taxi trip records, public</span>
         <span className="label">Designed & built by Bhavya Upreti — measured, not claimed</span>
+        {meta && (
+          <span className="label">
+            Archive — {(meta.archive_bytes / 1e9).toFixed(1)} GB on disk ·{" "}
+            {fmt(meta.total_rows)} trips · {meta.months[0]} → {meta.newest_month} ·
+            grows ≈ 0.5 GB a year
+          </span>
+        )}
+        {freshnessLine && <span className="label">{freshnessLine}</span>}
       </footer>
     </div>
   );

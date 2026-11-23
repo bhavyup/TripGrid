@@ -499,6 +499,10 @@ def run_spec(spec_dict: dict, workers: int = DEFAULT_WORKERS,
 
     stats = dict(prune)
     stats.update(run_stats)
+    # The pool reports wall_seconds; this module's empty path and
+    # the audit accumulator call it wall_s. Publish both names so
+    # every consumer finds the one it expects.
+    stats["wall_s"] = float(stats.get("wall_seconds", 0.0))
     stats.update({
         "rows_scanned": scanned,
         "spec": spec.to_dict(),
@@ -519,7 +523,10 @@ def run_preset(name: str, range_override=None,
     preset = PRESETS[name]
     if preset.get("kind") == "audit":
         rows: list[dict] = []
-        total = {"rows_scanned": 0, "wall_s": 0.0, "peak_rss_mb": 0.0}
+        total = {"rows_scanned": 0, "wall_s": 0.0, "peak_rss_mb": 0.0,
+                 "partitions_total": 0, "partitions_selected": 0,
+                 "partitions_pruned": 0, "rows_total": 0,
+                 "rows_selected": 0}
         for part in preset["parts"]:
             part_rows, part_stats = run_spec(
                 part["spec"], workers=workers, ceiling_mb=ceiling_mb,
@@ -532,6 +539,13 @@ def run_preset(name: str, range_override=None,
             rows.append(row)
             total["rows_scanned"] += part_stats["rows_scanned"]
             total["wall_s"] += part_stats["wall_s"]
+            # The audit makes one pass per part, so files read and
+            # rows considered honestly add up across the parts.
+            total["partitions_total"] = part_stats.get("partitions_total", 0)
+            total["partitions_selected"] += part_stats.get("partitions_selected", 0)
+            total["partitions_pruned"] += part_stats.get("partitions_pruned", 0)
+            total["rows_total"] = part_stats.get("rows_total", 0)
+            total["rows_selected"] += part_stats.get("rows_selected", 0)
             total["peak_rss_mb"] = max(total["peak_rss_mb"],
                                        part_stats["peak_rss_mb"])
         stats = dict(total)

@@ -1,4 +1,4 @@
-"""TripGrid API (M4): the engine as a small web server.
+"""TripGrid API: the engine as a small web server.
 
 Design rules, all in service of the 2 GB ceiling:
 - ONE shared ThreadPoolExecutor for the whole server, created at
@@ -13,19 +13,33 @@ Design rules, all in service of the 2 GB ceiling:
   the asyncio queue directly.
 
 Endpoints:
-  GET  /api/meta                 years, questions, dataset + cache info
+  GET  /api/meta                 years, months, questions, archive
+                                 size, freshness status, cache info
   GET  /api/plan?query&year      which partitions a question will read/skip
   POST /api/query {query, year}  start a job (or answer from cache)
+  GET  /api/presets              the eleven preset questions (2.0)
+  GET  /api/builder              the builder catalogue: measures,
+                                 dimensions, filters, budgets (2.0)
+  POST /api/spec/validate {spec} price a recipe without running it
+  POST /api/spec/run {spec}      run a hand-built recipe as a job
+  POST /api/preset/run {name}    run a preset (range overridable)
   GET  /api/jobs/{id}            job status / result
   GET  /api/jobs/{id}/events     live progress (Server-Sent Events)
   GET  /api/benchmarks           the latest suite results, if present
   GET  /api/live                 real console runs this session,
                                  latest per query+year (cache hits
                                  are not runs and are never recorded)
+
+Freshness: a background task checks the city's feed shortly after
+startup and then daily — new months are downloaded, converted and
+indexed by ingest.freshness, and months the city re-published are
+replaced. The latest status rides along in /api/meta. Set
+TRIPGRID_FRESHNESS=off to disable (tests do not need the network).
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import uuid
@@ -40,11 +54,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from engine import executor, planner, zones
+from engine import composer, executor, planner, zones
+from engine.spec import (
+    DIMENSIONS,
+    MAX_BUCKETS,
+    MAX_PCTL_GROUPS,
+    PERCENTILE_MEASURES,
+    PRESETS,
+    Spec,
+    SpecError,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_BUDGET_BYTES = 128 * 1024 * 1024
 MAX_JOBS_KEPT = 50
+FRESHNESS_INTERVAL_S = 24 * 3600
 
 QUERIES = {
     "q1": {
@@ -98,10 +122,30 @@ class ResultCache:
 
 
 class Job:
-    def __init__(self, query: str, year: int):
+    """One unit of engine work. kind is "legacy" (the original four
+    questions), "preset" (a named 2.0 recipe) or "spec" (a recipe
+    built by hand in the Question Builder)."""
+
+    def __init__(
+        self,
+        query: str,
+        year: int | None,
+        kind: str = "legacy",
+        title: str = "",
+        spec_dict: dict | None = None,
+        preset: str | None = None,
+        range_override=None,
+        cache_key: str | None = None,
+    ):
         self.id = uuid.uuid4().hex[:12]
         self.query = query
         self.year = year
+        self.kind = kind
+        self.title = title
+        self.spec_dict = spec_dict
+        self.preset = preset
+        self.range_override = range_override
+        self.cache_key = cache_key
         self.status = "queued"  # queued | running | done | error
         self.queue: asyncio.Queue = asyncio.Queue()
         self.payload: dict | None = None
@@ -109,6 +153,38 @@ class Job:
 
 
 STATE: dict = {}
+
+
+def _archive_bytes() -> int:
+    """Total size of the partitioned archive on disk."""
+    root = REPO_ROOT / "data" / "partitioned"
+    if not root.exists():
+        return 0
+    return sum(f.stat().st_size for f in root.rglob("*.parquet"))
+
+
+async def _freshness_loop() -> None:
+    """Check the city's feed shortly after startup, then daily.
+    Failures are recorded in STATE, never raised — a dead network
+    must not take the server down with it."""
+    if os.environ.get("TRIPGRID_FRESHNESS") == "off":
+        return
+    await asyncio.sleep(20)
+    while True:
+        try:
+            from ingest import freshness
+
+            status = await asyncio.get_running_loop().run_in_executor(
+                STATE["pool"], lambda: freshness.check_and_update()
+            )
+            STATE["freshness"] = status
+            STATE["archive_bytes"] = _archive_bytes()
+        except Exception as exc:  # recorded, never swallowed silently
+            STATE["freshness"] = {
+                "error": f"{type(exc).__name__}: {exc}",
+                "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+        await asyncio.sleep(FRESHNESS_INTERVAL_S)
 
 
 @asynccontextmanager
@@ -120,7 +196,11 @@ async def lifespan(app: FastAPI):
     STATE["cache"] = ResultCache(CACHE_BUDGET_BYTES)
     STATE["jobs"] = {}
     STATE["live"] = {}  # (year, query) -> latest real run's record
+    STATE["freshness"] = None  # latest freshness status, once checked
+    STATE["archive_bytes"] = _archive_bytes()
+    STATE["freshness_task"] = asyncio.create_task(_freshness_loop())
     yield
+    STATE["freshness_task"].cancel()
     STATE["pool"].shutdown(wait=False)
 
 
@@ -133,6 +213,10 @@ app.add_middleware(
 def _years_available() -> list[int]:
     index = planner.load_index()
     return sorted({int(p["month"][:4]) for p in index})
+
+
+def _index_months() -> list[str]:
+    return sorted({p["month"] for p in planner.load_index()})
 
 
 def _months_of(year: int) -> set[str]:
@@ -169,6 +253,88 @@ def _run_engine(query: str, year: int, pool, progress) -> dict:
     return {"result": result, "stats": stats}
 
 
+def _run_composer(job: Job, pool, progress) -> dict:
+    """Runs in a pool thread. Runs a preset or a hand-built recipe
+    through the composer and normalises its stats into the same
+    shape the legacy runners produce, so the console's run-stats
+    strip works unchanged for every kind of question."""
+    kw = dict(workers=executor.DEFAULT_WORKERS, pool=pool, progress=progress)
+    if job.kind == "preset":
+        rows, stats = composer.run_preset(
+            job.preset, range_override=job.range_override, **kw
+        )
+        kind = stats.get("kind", "preset")
+        title = stats.get("title") or job.title
+    else:
+        rows, stats = composer.run_spec(job.spec_dict, **kw)
+        kind = "spec"
+        title = job.title or "Custom question"
+    peak = float(stats.get("peak_rss_mb", 0.0))
+    norm = {
+        "partitions_total": int(stats.get("partitions_total", 0)),
+        "partitions_selected": int(stats.get("partitions_selected", 0)),
+        "partitions_pruned": int(stats.get("partitions_pruned", 0)),
+        "rows_total": int(stats.get("rows_total", 0)),
+        "rows_selected": int(stats.get("rows_selected", 0)),
+        "rows_scanned": int(stats.get("rows_scanned", 0)),
+        "files_read": int(stats.get("partitions_selected", 0)),
+        "wall_seconds": float(stats.get("wall_s", stats.get("wall_seconds", 0.0))),
+        "peak_rss_mb": peak,
+        "ceiling_mb": executor.DEFAULT_CEILING_MB,
+        "under_ceiling": peak <= executor.DEFAULT_CEILING_MB,
+        "workers": executor.DEFAULT_WORKERS,
+    }
+    result = {
+        "kind": kind,
+        "title": title,
+        "rows": rows,
+        "spec": stats.get("spec"),
+        "gate": stats.get("gate"),
+    }
+    return {"result": result, "stats": norm}
+
+
+# Four of the presets ARE the original four questions, re-expressed
+# as recipes. When one of them runs over exactly one calendar year,
+# the run is the same question over the same data the Evidence
+# section races — so it counts as that question's live run, with
+# the composer's own measured stats. Anything else (other ranges,
+# other presets, audits, hand-built recipes) is not recorded: the
+# Live view only ever shows like-for-like runs.
+LEGACY_OF_PRESET = {
+    "zone_month_trips": "q1",
+    "airport_payments": "q2",
+    "friday_manhattan": "q3",
+    "fare_percentiles": "q4",
+}
+
+
+def _record_live_from_preset(job: Job, payload: dict) -> None:
+    query = LEGACY_OF_PRESET.get(job.preset or "")
+    if query is None:
+        return
+    spec_out = (payload.get("result") or {}).get("spec") or {}
+    rng = spec_out.get("range") or []
+    if len(rng) != 2:
+        return
+    start, end = rng
+    if start[5:] != "01" or end[5:] != "12" or start[:4] != end[:4]:
+        return  # not exactly one calendar year — not like-for-like
+    year = int(start[:4])
+    stats = payload["stats"]
+    key = (year, query)
+    prev = STATE["live"].get(key)
+    STATE["live"][key] = {
+        "wall_seconds": stats["wall_seconds"],
+        "peak_rss_mb": stats["peak_rss_mb"],
+        "rows_scanned": stats["rows_scanned"],
+        "files_read": stats["files_read"],
+        "partitions_selected": stats["partitions_selected"],
+        "runs": (prev["runs"] + 1) if prev else 1,
+        "last_run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
 async def _run_job(job: Job) -> None:
     loop = asyncio.get_running_loop()
     async with STATE["semaphore"]:
@@ -181,28 +347,39 @@ async def _run_job(job: Job) -> None:
             )
 
         try:
-            payload = await loop.run_in_executor(
-                STATE["pool"], lambda: _run_engine(job.query, job.year, STATE["pool"], progress)
-            )
+            if job.kind == "legacy":
+                payload = await loop.run_in_executor(
+                    STATE["pool"],
+                    lambda: _run_engine(job.query, job.year, STATE["pool"], progress),
+                )
+            else:
+                payload = await loop.run_in_executor(
+                    STATE["pool"], lambda: _run_composer(job, STATE["pool"], progress)
+                )
             job.payload = payload
             job.status = "done"
-            STATE["cache"].put(f"{job.query}:{job.year}", payload)
-            # Record the run for the Evidence section's Live view.
-            # This is the only place runs are recorded, and cache
-            # hits never reach it — they return inside start_query —
-            # so a "live run" always means the engine really ran.
-            stats = payload["stats"]
-            key = (job.year, job.query)
-            prev = STATE["live"].get(key)
-            STATE["live"][key] = {
-                "wall_seconds": stats["wall_seconds"],
-                "peak_rss_mb": stats["peak_rss_mb"],
-                "rows_scanned": stats["rows_scanned"],
-                "files_read": stats["files_read"],
-                "partitions_selected": stats["partitions_selected"],
-                "runs": (prev["runs"] + 1) if prev else 1,
-                "last_run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            }
+            if job.cache_key:
+                STATE["cache"].put(job.cache_key, payload)
+            if job.kind == "preset":
+                _record_live_from_preset(job, payload)
+            if job.kind == "legacy":
+                # Record the run for the Evidence section's Live view.
+                # This is the only place runs are recorded, and cache
+                # hits never reach it — they return inside the start
+                # endpoints — so a "live run" always means the engine
+                # really ran.
+                stats = payload["stats"]
+                key = (job.year, job.query)
+                prev = STATE["live"].get(key)
+                STATE["live"][key] = {
+                    "wall_seconds": stats["wall_seconds"],
+                    "peak_rss_mb": stats["peak_rss_mb"],
+                    "rows_scanned": stats["rows_scanned"],
+                    "files_read": stats["files_read"],
+                    "partitions_selected": stats["partitions_selected"],
+                    "runs": (prev["runs"] + 1) if prev else 1,
+                    "last_run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                }
             job.queue.put_nowait({"type": "done"})
         except Exception as exc:  # surfaced to the client, never swallowed
             job.status = "error"
@@ -210,11 +387,33 @@ async def _run_job(job: Job) -> None:
             job.queue.put_nowait({"type": "error", "error": job.error})
 
 
+def _register_job(job: Job) -> None:
+    jobs: dict = STATE["jobs"]
+    jobs[job.id] = job
+    while len(jobs) > MAX_JOBS_KEPT:  # keep memory bounded; drop oldest finished jobs
+        oldest = next((j for j in jobs.values() if j.status in ("done", "error")), None)
+        if oldest is None:
+            break
+        jobs.pop(oldest.id)
+    asyncio.create_task(_run_job(job))
+
+
 class QueryRequest(BaseModel):
     query: str
     year: int
     # fresh=True skips the result cache: the engine really runs,
     # and the run is recorded in the live evidence.
+    fresh: bool = False
+
+
+class SpecRequest(BaseModel):
+    spec: dict
+    fresh: bool = False
+
+
+class PresetRequest(BaseModel):
+    name: str
+    range: list[str] | None = None
     fresh: bool = False
 
 
@@ -232,11 +431,20 @@ def zones_list():
 @app.get("/api/meta")
 def meta():
     index = planner.load_index()
+    months = sorted({p["month"] for p in index})
+    month_rows: dict[str, int] = {}
+    for p in index:
+        month_rows[p["month"]] = month_rows.get(p["month"], 0) + p["rows"]
     return {
         "years": _years_available(),
+        "months": months,
+        "month_rows": month_rows,
+        "newest_month": months[-1] if months else None,
         "queries": [{"id": q, **info} for q, info in QUERIES.items()],
         "partitions": len(index),
         "total_rows": sum(p["rows"] for p in index),
+        "archive_bytes": STATE.get("archive_bytes", 0),
+        "freshness": STATE.get("freshness"),
         "ceiling_mb": executor.DEFAULT_CEILING_MB,
         "workers": executor.DEFAULT_WORKERS,
         "cache": STATE["cache"].stats(),
@@ -268,18 +476,232 @@ async def start_query(req: QueryRequest):
         raise HTTPException(400, f"unknown query {req.query!r}; expected one of {sorted(QUERIES)}")
     if req.year not in _years_available():
         raise HTTPException(400, f"no data for year {req.year}")
-    cached = None if req.fresh else STATE["cache"].get(f"{req.query}:{req.year}")
+    cache_key = f"{req.query}:{req.year}"
+    cached = None if req.fresh else STATE["cache"].get(cache_key)
     if cached is not None:
         return {"cached": True, "job_id": None, **cached}
-    job = Job(req.query, req.year)
-    jobs: dict = STATE["jobs"]
-    jobs[job.id] = job
-    while len(jobs) > MAX_JOBS_KEPT:  # keep memory bounded; drop oldest finished jobs
-        oldest = next((j for j in jobs.values() if j.status in ("done", "error")), None)
-        if oldest is None:
-            break
-        jobs.pop(oldest.id)
-    asyncio.create_task(_run_job(job))
+    job = Job(
+        req.query,
+        req.year,
+        title=QUERIES[req.query]["title"],
+        cache_key=cache_key,
+    )
+    _register_job(job)
+    return {"cached": False, "job_id": job.id, "status": job.status}
+
+
+# ------------------------------------------------------------------
+# TripGrid 2.0: presets, the Question Builder catalogue, and recipe
+# runs. A recipe is validated (and priced by the cardinality gate)
+# before a job exists, so a refusal is a clean 400 with the gate's
+# own plain-words message — never a failed job.
+
+MEASURE_LABELS: dict[str, tuple[str, str]] = {
+    # id -> (label, unit) — the unit tells the frontend how to
+    # format a value: usd, pct, mi, mph, duration_s, count, plain.
+    "trips": ("Trips", "count"),
+    "sum_fare": ("Total fare", "usd"),
+    "avg_fare": ("Average fare", "usd"),
+    "sum_tip": ("Total tip", "usd"),
+    "avg_tip": ("Average tip", "usd"),
+    "tip_pct": ("Tip % of fare", "pct"),
+    "tip_pct_card": ("Tip % — card trips only", "pct"),
+    "sum_total": ("Total charged", "usd"),
+    "sum_distance": ("Total distance", "mi"),
+    "avg_distance": ("Average distance", "mi"),
+    "sum_passengers": ("Total passengers", "count"),
+    "avg_passengers": ("Average passengers", "plain"),
+    "avg_duration": ("Average duration", "duration_s"),
+    "avg_speed": ("Average speed", "mph"),
+    "p50_fare": ("Median fare (p50)", "usd"),
+    "p90_fare": ("Fare p90", "usd"),
+    "p99_fare": ("Fare p99", "usd"),
+}
+
+DIMENSION_LABELS: dict[str, str] = {
+    "year": "Year",
+    "month": "Month",
+    "month_of_year": "Month of year",
+    "pu_borough": "Pickup borough",
+    "do_borough": "Drop-off borough",
+    "pu_zone": "Pickup zone",
+    "do_zone": "Drop-off zone",
+    "route": "Route — pickup → drop-off",
+    "hour": "Hour of day",
+    "weekday": "Weekday",
+    "hour_weekday": "Hour × weekday",
+    "payment_type": "Payment type",
+    "airport": "Airport pickup",
+}
+
+FILTER_DEFS: list[tuple[str, str, str]] = [
+    # id, label, kind — kind tells the frontend which control to
+    # draw: boroughs | zones | hours | weekdays | payments |
+    # airport | flag | number.
+    ("pu_boroughs", "Pickup boroughs", "boroughs"),
+    ("do_boroughs", "Drop-off boroughs", "boroughs"),
+    ("pu_zones", "Pickup zones", "zones"),
+    ("do_zones", "Drop-off zones", "zones"),
+    ("hours", "Hours of day", "hours"),
+    ("weekdays", "Weekdays", "weekdays"),
+    ("payment_types", "Payment types", "payments"),
+    ("airport", "Airport pickups", "airport"),
+    ("sane_only", "Sane trips only (60s–4h, 0.1–200 mi)", "flag"),
+    ("fare_min", "Fare at least ($)", "number"),
+    ("fare_max", "Fare at most ($)", "number"),
+    ("dist_min", "Distance at least (mi)", "number"),
+    ("dist_max", "Distance at most (mi)", "number"),
+    ("dur_min", "Duration at least (seconds)", "number"),
+    ("dur_max", "Duration at most (seconds)", "number"),
+    ("min_passengers", "Passengers at least", "number"),
+]
+
+BOROUGHS = [
+    "Manhattan", "Brooklyn", "Queens", "Bronx",
+    "Staten Island", "EWR", "N/A", "Unknown",
+]
+
+PAYMENT_LABELS = {
+    0: "Unknown", 1: "Card", 2: "Cash", 3: "No charge",
+    4: "Dispute", 5: "Unknown (5)", 6: "Voided",
+}
+
+
+@app.get("/api/presets")
+def presets():
+    out = []
+    for pid, p in PRESETS.items():
+        item = {
+            "id": pid,
+            "title": p["title"],
+            "note": p["note"],
+            "kind": p.get("kind", "spec"),
+        }
+        if item["kind"] == "audit":
+            item["parts"] = [
+                {"name": part["name"], "label": part["label"]} for part in p["parts"]
+            ]
+        else:
+            item["spec"] = p["spec"]
+        out.append(item)
+    return out
+
+
+@app.get("/api/builder")
+def builder():
+    """Everything the Question Builder needs to draw itself: the
+    full toggle surface, with the gate budgets stated up front."""
+    return {
+        "measures": [
+            {
+                "id": m,
+                "label": label,
+                "unit": unit,
+                "percentile": m in PERCENTILE_MEASURES,
+            }
+            for m, (label, unit) in MEASURE_LABELS.items()
+        ],
+        "dimensions": [
+            {"id": d, "label": DIMENSION_LABELS[d], "cardinality": DIMENSIONS[d]}
+            for d in DIMENSION_LABELS
+        ],
+        "filters": [
+            {"id": f, "label": label, "kind": kind} for f, label, kind in FILTER_DEFS
+        ],
+        "boroughs": BOROUGHS,
+        "payments": [
+            {"id": pid, "label": label} for pid, label in PAYMENT_LABELS.items()
+        ],
+        "max_buckets": MAX_BUCKETS,
+        "max_pctl_groups": MAX_PCTL_GROUPS,
+    }
+
+
+def _validate(raw: dict) -> Spec:
+    return Spec(raw, index_months=_index_months())
+
+
+@app.post("/api/spec/validate")
+def validate_spec(req: SpecRequest):
+    """Price a recipe without running it: the gate's verdict, the
+    months and rows it would touch. The builder calls this as the
+    user toggles, so the gate line is always live."""
+    index = planner.load_index()
+    try:
+        spec = _validate(req.spec)
+    except SpecError as exc:
+        return {"ok": False, "error": str(exc)}
+    in_range = set(spec.months)
+    return {
+        "ok": True,
+        "gate": spec.gate_report(),
+        "months": len(spec.months),
+        "rows_in_range": sum(p["rows"] for p in index if p["month"] in in_range),
+        "partitions_in_range": sum(1 for p in index if p["month"] in in_range),
+        "spec": spec.to_dict(),
+    }
+
+
+@app.post("/api/spec/run")
+async def start_spec_run(req: SpecRequest):
+    try:
+        spec = _validate(req.spec)
+    except SpecError as exc:
+        raise HTTPException(400, str(exc))
+    cache_key = "spec:" + hashlib.sha256(
+        json.dumps(spec.to_dict(), sort_keys=True).encode()
+    ).hexdigest()[:20]
+    if not req.fresh:
+        cached = STATE["cache"].get(cache_key)
+        if cached is not None:
+            return {"cached": True, "job_id": None, **cached}
+    job = Job(
+        "spec",
+        None,
+        kind="spec",
+        title="Custom question",
+        spec_dict=spec.to_dict(),
+        cache_key=cache_key,
+    )
+    _register_job(job)
+    return {"cached": False, "job_id": job.id, "status": job.status}
+
+
+@app.post("/api/preset/run")
+async def start_preset_run(req: PresetRequest):
+    if req.name not in PRESETS:
+        raise HTTPException(
+            400, f"unknown preset {req.name!r}; expected one of {sorted(PRESETS)}"
+        )
+    preset = PRESETS[req.name]
+    is_audit = preset.get("kind") == "audit"
+    range_override = None if is_audit else req.range
+    try:
+        if is_audit:
+            for part in preset["parts"]:
+                _validate(part["spec"])
+        else:
+            raw = dict(preset["spec"])
+            if range_override is not None:
+                raw["range"] = range_override
+            _validate(raw)
+    except SpecError as exc:
+        raise HTTPException(400, str(exc))
+    cache_key = f"preset:{req.name}:{range_override or 'default'}"
+    if not req.fresh:
+        cached = STATE["cache"].get(cache_key)
+        if cached is not None:
+            return {"cached": True, "job_id": None, **cached}
+    job = Job(
+        "preset",
+        None,
+        kind="preset",
+        title=preset["title"],
+        preset=req.name,
+        range_override=range_override,
+        cache_key=cache_key,
+    )
+    _register_job(job)
     return {"cached": False, "job_id": job.id, "status": job.status}
 
 
@@ -288,7 +710,14 @@ def job_status(job_id: str):
     job = STATE["jobs"].get(job_id)
     if job is None:
         raise HTTPException(404, "unknown job")
-    out = {"id": job.id, "query": job.query, "year": job.year, "status": job.status}
+    out = {
+        "id": job.id,
+        "query": job.query,
+        "year": job.year,
+        "kind": job.kind,
+        "title": job.title,
+        "status": job.status,
+    }
     if job.payload is not None:
         out.update(job.payload)
     if job.error is not None:
