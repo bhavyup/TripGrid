@@ -46,6 +46,11 @@ export default function App() {
   const [fresh, setFresh] = useState(false);
   const [filesDone, setFilesDone] = useState(0);
   const [filesTotal, setFilesTotal] = useState(0);
+  // Live rows scanned and peak RSS so far, from the progress stream.
+  // Null until the first event of a run (or for runs that cannot
+  // report them); the console falls back to the payload stats.
+  const [liveRows, setLiveRows] = useState<number | null>(null);
+  const [livePeak, setLivePeak] = useState<number | null>(null);
   const [status, setStatus] = useState("Idle — pick a question and run it");
   const [payload, setPayload] = useState<SpecJobPayload | null>(null);
   const cacheRef = useRef(new Map<string, SpecJobPayload>());
@@ -118,6 +123,8 @@ export default function App() {
     setPayload(remembered ?? null);
     setFilesDone(remembered ? (remembered.stats.files_read ?? 0) : 0);
     setFilesTotal(remembered ? remembered.stats.partitions_selected : 0);
+    setLiveRows(null);
+    setLivePeak(null);
     setStatus(
       remembered
         ? "Answered from memory — the engine keeps recent answers"
@@ -134,10 +141,19 @@ export default function App() {
     setPayload(null);
     setFilesDone(0);
     setFilesTotal(0);
+    setLiveRows(null);
+    setLivePeak(null);
     setStatus("Reading — the engine is scanning the selected files");
-    const prog = (done: number, total: number) => {
+    const prog = (
+      done: number,
+      total: number,
+      rows: number | null,
+      peak: number | null,
+    ) => {
       setFilesDone(done);
       setFilesTotal(total);
+      if (rows != null) setLiveRows(rows);
+      if (peak != null) setLivePeak(peak);
     };
     try {
       const result =
@@ -276,6 +292,8 @@ export default function App() {
           onToggleFresh={() => setFresh((f) => !f)}
           filesDone={filesDone}
           filesTotal={filesTotal}
+          liveRows={liveRows}
+          livePeak={livePeak}
           status={status}
           payload={payload}
           onRun={run}

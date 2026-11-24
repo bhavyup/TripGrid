@@ -274,11 +274,6 @@ export default function EngineTheater({
       data-progress={Math.round(progress * 100)}
       data-act={hudAct}
     >
-      {/* Top progress hairline sweep during live scan */}
-      <div className="theater-rail" aria-hidden="true">
-        <i style={{ width: `${Math.round(progress * 100)}%` }} />
-      </div>
-
       <div className="theater-grid">
         {/* LEFT: NYC Cartographic Stencil Map with live pen-tracing contours */}
         <div className="theater-map-pane">

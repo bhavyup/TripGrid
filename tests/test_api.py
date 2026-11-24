@@ -83,6 +83,33 @@ def test_events_stream_progress_then_done(client):
     assert '"done"' in seen[-1]
 
 
+def test_events_stream_progress_carries_live_rows_and_peak(client):
+    # A composer run (preset over one year) streams progress events
+    # that carry the live numbers the console shows mid-scan: rows
+    # scanned so far and peak RSS so far. fresh=true so the run
+    # really executes; 2025 (not 2024) so it does not fill the cache
+    # entry test_preset_run_matches_q3_truth asserts is a miss.
+    started = client.post(
+        "/api/preset/run",
+        json={"name": "friday_manhattan", "range": ["2025-01", "2025-12"],
+              "fresh": True},
+    ).json()
+    assert started["cached"] is False
+    seen_rows = False
+    seen_peak = False
+    with client.stream("GET", f"/api/jobs/{started['job_id']}/events") as resp:
+        for line in resp.iter_lines():
+            if line.startswith("data:"):
+                if '"rows"' in line:
+                    seen_rows = True
+                if '"peak_mb"' in line:
+                    seen_peak = True
+            if '"done"' in line:
+                break
+    assert seen_rows, "no progress event carried live rows"
+    assert seen_peak, "no progress event carried live peak"
+
+
 def test_live_records_only_real_runs(client):
     # q2/2024 is exercised by no other test in this module, so its
     # live record starts absent and every step below is exact.

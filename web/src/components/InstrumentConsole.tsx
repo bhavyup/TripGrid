@@ -49,6 +49,8 @@ interface Props {
   onToggleFresh: () => void;
   filesDone: number;
   filesTotal: number;
+  liveRows: number | null;
+  livePeak: number | null;
   status: string;
   payload: SpecJobPayload | null;
   onRun: () => void;
@@ -82,6 +84,8 @@ export default function InstrumentConsole({
   onToggleFresh,
   filesDone,
   filesTotal,
+  liveRows,
+  livePeak,
   status,
   payload,
   onRun,
@@ -115,15 +119,47 @@ export default function InstrumentConsole({
     [range, mode, activePreset, months, isAudit],
   );
 
-  // Smoothly animated numeric telemetry roll-ins
-  const animWall = useAnimatedNumber(stats ? stats.wall_seconds : null, 480);
-  const animPeak = useAnimatedNumber(stats ? stats.peak_rss_mb : null, 520);
-  const animRows = useAnimatedNumber(stats ? stats.rows_scanned : null, 600);
-  const throughputTarget =
-    stats && stats.wall_seconds > 0
+  // Live telemetry. The wall clock ticks from RUN (client clock) while
+  // the scan runs; the other readouts chase the live numbers the
+  // progress stream measures (rows scanned and peak RSS so far).
+  // When the run lands, the same animated numbers glide the short
+  // distance to the payload's final stats — nothing counts up from
+  // zero, and nothing below re-renders: the values were already
+  // flowing. The chaser runs tighter (240 ms) mid-run than on the
+  // settle (480–600 ms), so the numbers track the scan instead of
+  // trailing it.
+  const [liveElapsed, setLiveElapsed] = useState<number | null>(null);
+  useEffect(() => {
+    if (!running) return;
+    const t0 = performance.now();
+    setLiveElapsed(0);
+    const id = window.setInterval(
+      () => setLiveElapsed((performance.now() - t0) / 1000),
+      100,
+    );
+    return () => window.clearInterval(id);
+  }, [running]);
+  const animWall = useAnimatedNumber(
+    running ? liveElapsed : stats ? stats.wall_seconds : null,
+    running ? 240 : 480,
+  );
+  const animPeak = useAnimatedNumber(
+    running ? livePeak : stats ? stats.peak_rss_mb : null,
+    running ? 240 : 520,
+  );
+  const animRows = useAnimatedNumber(
+    running ? liveRows : stats ? stats.rows_scanned : null,
+    running ? 240 : 600,
+  );
+  const throughputTarget = running
+    ? liveRows != null && liveElapsed != null && liveElapsed > 0.2
+      ? liveRows / liveElapsed / 1_000_000
+      : null
+    : stats && stats.wall_seconds > 0
       ? stats.rows_scanned / stats.wall_seconds / 1_000_000
       : null;
-  const animThroughput = useAnimatedNumber(throughputTarget, 520);
+  const animThroughput = useAnimatedNumber(throughputTarget, running ? 240 : 520);
+  const peakShown = running ? (livePeak ?? 0) : (stats?.peak_rss_mb ?? 0);
 
   const handleCustomizePreset = useCallback(
     (preset: PresetInfo) => {
@@ -318,7 +354,15 @@ export default function InstrumentConsole({
       />
 
       {/* ---------- 4. ANIMATED EXECUTION TELEMETRY STRIP ---------- */}
-      <div className={`telemetry-bar${payload ? " locked" : ""}`}>
+      <div className="telemetry-bar">
+        {/* The single progress line: it flows with the query from the
+            first file to the last, gliding between the 100 ms progress
+            updates, then rests full-width when the run lands. It
+            replaces the theater's own hairline above the maps and the
+            old lock-sweep that fired once on completion. */}
+        <div className="telemetry-progress" aria-hidden="true">
+          <i style={{ width: `${scanPct}%` }} />
+        </div>
         <div className="runstats-v2">
           <div className="tstat">
             <span className="label">Wall time</span>
@@ -336,9 +380,7 @@ export default function InstrumentConsole({
               <div
                 className="fill"
                 style={{
-                  width: stats
-                    ? `${Math.min(100, (stats.peak_rss_mb / 2048) * 100)}%`
-                    : "0%",
+                  width: `${Math.min(100, (peakShown / 2048) * 100)}%`,
                 }}
               />
               <div className="ceil" />
@@ -382,97 +424,67 @@ export default function InstrumentConsole({
 
       {/* ---------- 5. LIVE ENGINE THEATER & RESULTS STAGE ---------- */}
       <div className="results-stage" ref={resultsStageRef}>
-        {running ? (
-          <EngineTheater
-            phase="scanning"
-            title={activeTitle}
-            months={months}
-            effectiveRange={effectiveRange}
-            effectiveSpec={effectiveSpec}
-            zones={zones}
-            isAudit={isAudit}
-            gate={gate}
-            gateBlocked={gateBlocked}
-            filesDone={filesDone}
-            filesTotal={filesTotal}
-            payload={null}
-            choreography={choreography}
-          />
-        ) : payload ? (
-          <div className="result-v2">
-            <div className="result-head-v2">
-              <div className="result-title-group">
-                <span className="result-kind">
-                  {payload.result.kind === "audit"
+        <div className="result-v2">
+          <div className="result-head-v2">
+            <div className="result-title-group">
+              <span className="result-kind">
+                {payload && !running
+                  ? payload.result.kind === "audit"
+                    ? "Audit"
+                    : mode === "builder"
+                      ? "Builder"
+                      : "Preset"
+                  : isAudit
                     ? "Audit"
                     : mode === "builder"
                       ? "Builder"
                       : "Preset"}
-                </span>
-                <h3>{payload.result.title}</h3>
-              </div>
-
-              <div className="result-meta-actions">
-                {payload.result.rows.length > 0 && (
-                  <button
-                    type="button"
-                    className="csv-btn"
-                    onClick={handleExportCsv}
-                  >
-                    Export CSV
-                  </button>
-                )}
-              </div>
+              </span>
+              <h3>{payload && !running ? payload.result.title : activeTitle}</h3>
             </div>
 
-            <div className="receipt-theater-wrap">
-                <EngineTheater
-                  phase="done"
-                  title={payload.result.title}
-                  months={months}
-                  effectiveRange={effectiveRange}
-                  effectiveSpec={effectiveSpec}
-                  zones={zones}
-                  isAudit={isAudit}
-                  gate={gate}
-                  gateBlocked={false}
-                  filesDone={payload.stats.files_read}
-                  filesTotal={payload.stats.partitions_selected}
-                  payload={payload}
-                />
+            {payload && !running && payload.result.rows.length > 0 && (
+              <div className="result-meta-actions">
+                <button
+                  type="button"
+                  className="csv-btn"
+                  onClick={handleExportCsv}
+                >
+                  Export CSV
+                </button>
               </div>
+            )}
+          </div>
 
+          <div className="receipt-theater-wrap">
+            <EngineTheater
+              phase={running ? "scanning" : payload ? "done" : "ready"}
+              title={payload && !running ? payload.result.title : activeTitle}
+              months={months}
+              effectiveRange={effectiveRange}
+              effectiveSpec={effectiveSpec}
+              zones={zones}
+              isAudit={isAudit}
+              gate={gate}
+              gateBlocked={payload && !running ? false : gateBlocked}
+              filesDone={
+                running ? filesDone : payload ? payload.stats.files_read : 0
+              }
+              filesTotal={
+                running ? filesTotal : payload ? payload.stats.partitions_selected : 0
+              }
+              payload={running ? null : payload}
+              choreography={choreography}
+              onRun={running || payload ? undefined : onRun}
+            />
+          </div>
+
+          {payload && !running && (
             <div className="resultscroll-v2">
               <SpecResults payload={payload} catalogue={catalogue} />
             </div>
-          </div>
-        ) : (
-          <div className="result-v2">
-            <div className="result-head-v2">
-              <div className="result-title-group">
-                <span className="result-kind">
-                  {isAudit ? "Audit" : mode === "builder" ? "Builder" : "Preset"}
-                </span>
-                <h3>{activeTitle}</h3>
-              </div>
-            </div>
-          <EngineTheater
-            phase="ready"
-            title={activeTitle}
-            months={months}
-            effectiveRange={effectiveRange}
-            effectiveSpec={effectiveSpec}
-            zones={zones}
-            isAudit={isAudit}
-            gate={gate}
-            gateBlocked={gateBlocked}
-            filesDone={0}
-            filesTotal={0}
-            payload={null}
-            onRun={onRun}
-          />
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

@@ -472,7 +472,8 @@ def run_spec(spec_dict: dict, workers: int = DEFAULT_WORKERS,
     ]
     partials, run_stats = _run_pool(
         lambda job: _partial(plan, job), jobs, workers, ceiling_mb,
-        est_rows=prune["rows_selected"], pool=pool, progress=progress)
+        est_rows=prune["rows_selected"], pool=pool, progress=progress,
+        rows_of=lambda part: part[2])
 
     merged: dict = {}
     sparse: dict = {}

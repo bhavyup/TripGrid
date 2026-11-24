@@ -153,6 +153,7 @@ def _run_pool(
     est_rows: int | None = None,
     pool=None,
     progress=None,
+    rows_of=None,
 ):
     """Run worker over jobs, merge nothing — returns the list of
     partials plus run stats. Peak RSS is measured on the process
@@ -164,18 +165,35 @@ def _run_pool(
 
     pool: an optional caller-owned ThreadPoolExecutor (the API
     server lends its ONE shared pool; the CLI creates a private one
-    per run). progress: optional callback(done, total) fired as
-    each job finishes — the server bridges it to its event loop.
+    per run). rows_of: optional callable mapping a completed
+    partial to the rows it scanned — the composer passes one (its
+    partials carry the count); the legacy question runners do not,
+    so their progress events carry no live row count. progress:
+    optional callback(done, total, rows, peak) fired as each job
+    finishes — rows is the rows scanned so far (None when rows_of
+    is unset), peak is the peak RSS so far in MB. The server
+    bridges it to its event loop.
     """
     inline = est_rows is not None and est_rows < INLINE_ROWS_THRESHOLD
     t0 = time.perf_counter()
+    # Live numbers for the console's progress stream, held in a
+    # one-item list so the nested collector can update them.
+    rows_so_far = [0]
     with PeakSampler() as sampler:
+        def _fire(done: int, part=None) -> None:
+            if part is not None and rows_of is not None:
+                rows_so_far[0] += rows_of(part)
+            if progress:
+                progress(done, len(jobs),
+                         rows_so_far[0] if rows_of is not None else None,
+                         round(sampler.peak_mb, 1))
+
         if inline:
             partials = []
             for i, job in enumerate(jobs, start=1):
-                partials.append(worker(job))
-                if progress:
-                    progress(i, len(jobs))
+                partial = worker(job)
+                partials.append(partial)
+                _fire(i, partial)
         else:
             from concurrent.futures import as_completed
 
@@ -184,10 +202,10 @@ def _run_pool(
                 out = [None] * len(futures)
                 done = 0
                 for fut in as_completed(futures):
-                    out[futures[fut]] = fut.result()
+                    part = fut.result()
+                    out[futures[fut]] = part
                     done += 1
-                    if progress:
-                        progress(done, len(jobs))
+                    _fire(done, part)
                 return out
 
             if pool is not None:

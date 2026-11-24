@@ -340,11 +340,18 @@ async def _run_job(job: Job) -> None:
     async with STATE["semaphore"]:
         job.status = "running"
 
-        def progress(done: int, total: int) -> None:
+        def progress(done: int, total: int, rows: int | None = None,
+                     peak: float | None = None) -> None:
             # Called from engine threads — bridge safely to the loop.
-            loop.call_soon_threadsafe(
-                job.queue.put_nowait, {"type": "progress", "done": done, "total": total}
-            )
+            # The event carries the live numbers the console shows
+            # while the scan runs (rows scanned and peak RSS so far);
+            # the final numbers still come from the job payload.
+            event = {"type": "progress", "done": done, "total": total}
+            if rows is not None:
+                event["rows"] = rows
+            if peak is not None:
+                event["peak_mb"] = peak
+            loop.call_soon_threadsafe(job.queue.put_nowait, event)
 
         try:
             if job.kind == "legacy":

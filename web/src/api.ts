@@ -247,14 +247,24 @@ interface JobBody {
   error?: string;
 }
 
+/** Progress callback: files done/total plus the live numbers the
+ * server measures mid-scan (rows scanned so far, peak RSS so far
+ * in MB) — both null when the run cannot report them. */
+export type ProgressFn = (
+  done: number,
+  total: number,
+  rows: number | null,
+  peak: number | null,
+) => void;
+
 /**
  * Waits for a started job: progress streams over SSE (files
- * finished / files total), a slow poll backs it up in case the
- * stream is interrupted.
+ * finished / files total, plus live rows and peak), a slow poll
+ * backs it up in case the stream is interrupted.
  */
 function awaitJob(
   jobId: string,
-  onProgress: (done: number, total: number) => void,
+  onProgress: ProgressFn,
 ): Promise<{ result: unknown; stats: RunStats }> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -283,17 +293,32 @@ function awaitJob(
     // tab on long runs. Forward at most one update per 100 ms, always with
     // the latest values; the final numbers come from the job payload anyway.
     let lastProgressAt = 0;
-    let pendingProgress: { done: number; total: number } | null = null;
+    let pendingProgress: {
+      done: number;
+      total: number;
+      rows: number | null;
+      peak: number | null;
+    } | null = null;
     let progressTimer: number | undefined;
     const flushProgress = () => {
       progressTimer = undefined;
       if (pendingProgress) {
         lastProgressAt = Date.now();
-        onProgress(pendingProgress.done, pendingProgress.total);
+        onProgress(
+          pendingProgress.done,
+          pendingProgress.total,
+          pendingProgress.rows,
+          pendingProgress.peak,
+        );
         pendingProgress = null;
       }
     };
-    const reportProgress = (done: number, total: number) => {
+    const reportProgress = (
+      done: number,
+      total: number,
+      rows: number | null,
+      peak: number | null,
+    ) => {
       const now = Date.now();
       if (now - lastProgressAt >= 100) {
         lastProgressAt = now;
@@ -302,9 +327,9 @@ function awaitJob(
           window.clearTimeout(progressTimer);
           progressTimer = undefined;
         }
-        onProgress(done, total);
+        onProgress(done, total, rows, peak);
       } else {
-        pendingProgress = { done, total };
+        pendingProgress = { done, total, rows, peak };
         if (progressTimer === undefined) {
           progressTimer = window.setTimeout(flushProgress, 100 - (now - lastProgressAt));
         }
@@ -317,9 +342,16 @@ function awaitJob(
           type: string;
           done?: number;
           total?: number;
+          rows?: number;
+          peak_mb?: number;
         };
         if (event.type === "progress" && event.done != null && event.total != null) {
-          reportProgress(event.done, event.total);
+          reportProgress(
+            event.done,
+            event.total,
+            event.rows ?? null,
+            event.peak_mb ?? null,
+          );
         } else if (event.type === "done" || event.type === "error") {
           getJson<JobBody>(`/api/jobs/${jobId}`)
             .then(finish)
@@ -343,7 +375,7 @@ function awaitJob(
 async function startAndAwait(
   url: string,
   body: unknown,
-  onProgress: (done: number, total: number) => void,
+  onProgress: ProgressFn,
 ): Promise<{ result: unknown; stats: RunStats; cached: boolean }> {
   const started = await postJson<StartedJob>(url, body);
   if (started.cached && started.stats) {
@@ -366,7 +398,7 @@ function shape(query: string, raw: { result: never; stats: RunStats }): ResultPa
 export async function runQuery(
   query: string,
   year: number,
-  onProgress: (done: number, total: number) => void,
+  onProgress: ProgressFn,
   fresh = false,
 ): Promise<JobPayload> {
   const out = await startAndAwait(
@@ -384,7 +416,7 @@ export async function runQuery(
 /** Runs a hand-built recipe from the Question Builder. */
 export async function runSpec(
   spec: SpecDict,
-  onProgress: (done: number, total: number) => void,
+  onProgress: ProgressFn,
   fresh = false,
 ): Promise<SpecJobPayload> {
   const out = await startAndAwait("/api/spec/run", { spec, fresh }, onProgress);
@@ -399,7 +431,7 @@ export async function runSpec(
 export async function runPreset(
   name: string,
   range: [string, string] | null,
-  onProgress: (done: number, total: number) => void,
+  onProgress: ProgressFn,
   fresh = false,
 ): Promise<SpecJobPayload> {
   const out = await startAndAwait(
