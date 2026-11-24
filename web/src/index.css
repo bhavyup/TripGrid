@@ -3839,8 +3839,10 @@ details.frow[open ] summary.flabel::after {
 }
 
 .nyc-borough.pruned .nyc-bpath {
-  fill: rgba(233, 227, 214, 0.02);
-  stroke: var(--line);
+  /* Pruned boroughs stay legible: the whole city is always
+     readable as a stencil; active boroughs still win by fill. */
+  fill: rgba(233, 227, 214, 0.07);
+  stroke: rgba(233, 227, 214, 0.45);
   stroke-width: 0.9;
   stroke-dasharray: 3 3;
 }
@@ -3859,7 +3861,7 @@ details.frow[open ] summary.flabel::after {
 
 .nyc-borough.pruned .nyc-blabel {
   fill: var(--bone-faint);
-  opacity: 0.45;
+  opacity: 0.75;
 }
 
 .nyc-stream {
@@ -3887,7 +3889,7 @@ details.frow[open ] summary.flabel::after {
 }
 
 .nyc-airport.pruned .nyc-beacon-dot {
-  fill: var(--line);
+  fill: var(--bone-faint);
 }
 
 .nyc-beacon-ring {
@@ -3912,7 +3914,7 @@ details.frow[open ] summary.flabel::after {
 
 .nyc-airport.pruned .nyc-airport-lbl {
   fill: var(--bone-faint);
-  opacity: 0.4;
+  opacity: 0.7;
 }
 
 .nyc-bus-box {
@@ -3933,26 +3935,12 @@ details.frow[open ] summary.flabel::after {
   fill: var(--amber);
 }
 
+/* The sweep is positioned by the scan's real progress (inline
+   style from EngineTheater), never by a wall-clock loop: a
+   sub-second query used to finish while the sweep was still
+   a third of the way down the map. */
 .nyc-radar-sweep {
-  animation: radarSweep 1.9s linear infinite;
   pointer-events: none;
-}
-
-@keyframes radarSweep {
-  0% {
-    transform: translateY(-36px);
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(250px);
-    opacity: 0;
-  }
 }
 
 @keyframes streamFlow {

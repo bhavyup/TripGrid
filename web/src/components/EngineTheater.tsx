@@ -415,6 +415,13 @@ export default function EngineTheater({
                     height="36"
                     fill="url(#scanSweepGrad)"
                     className="nyc-radar-sweep"
+                    style={{
+                      // Sweep position follows the live scan
+                      // progress (filesDone / filesTotal): it
+                      // reaches the bottom exactly when the
+                      // query does, however fast that is.
+                      transform: `translateY(${(-36 + progress * 286).toFixed(1)}px)`,
+                    }}
                   />
                 )}
               </svg>
