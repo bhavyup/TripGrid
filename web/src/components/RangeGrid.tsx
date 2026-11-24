@@ -29,6 +29,8 @@ interface Props {
   onChange: (range: [string, string] | null) => void;
   /** A query is running: shortcuts, expander and month cells go inert. */
   locked: boolean;
+  /** Start with the month map open (used by the builder's Time Span petal). */
+  defaultExpanded?: boolean;
 }
 
 /**
@@ -46,10 +48,11 @@ export default function RangeGrid({
   isAudit,
   onChange,
   locked,
+  defaultExpanded,
 }: Props) {
   const [pending, setPending] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!defaultExpanded);
 
   const present = new Set(months);
   const years = [...new Set(months.map((m) => m.slice(0, 4)))].sort();

@@ -4823,3 +4823,139 @@ details.frow[open ] summary.flabel::after {
 button:disabled {
   cursor: not-allowed;
 }
+.petal-bay-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.petal-toggles {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+
+.petal-dims-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.petal-output-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.petal-sub-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.petal-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.petal-bay-range .archive-strip {
+  border: 1px solid var(--line);
+}
+
+/* STEP 9 — builder petals. The zip's five builder bays (Measures /
+   Group By / Geography / Schedule / Time Span) arrive as one focused
+   bay at a time, picked from a flat petal rail — not the zip's orbital
+   wheel, which would re-shape the preset screen he asked to keep.
+   The rail reads as the question itself: each petal carries its live
+   summary, and the bay below swaps with the same 250 ms crossfade
+   the results use. The theater below is untouched and shared: the
+   builder's draft already drives the stencil map, the month matrix,
+   the carrier, the synth, the live KPIs and the results swap, and
+   the step-8 lock already covers the panel. */
+.builder-focused-bay {
+  border: 1px solid var(--line);
+  padding: 14px 16px;
+}
+
+.petal-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+.petal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line);
+  padding: 10px 12px;
+  color: var(--bone);
+  cursor: pointer;
+  font-family: var(--sans);
+  min-width: 0;
+}
+
+.petal-cell:last-child {
+  border-right: none;
+}
+
+.petal-cell:hover {
+  background: rgba(233, 227, 214, 0.04);
+}
+
+.petal-cell.active {
+  background: rgba(255, 178, 36, 0.07);
+  box-shadow: inset 0 2px 0 var(--amber);
+}
+
+.petal-kicker {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.petal-cell.active .petal-kicker {
+  color: var(--bone);
+}
+
+.petal-summary {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--bone-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.petal-cell.active .petal-summary {
+  color: var(--bone-dim);
+}
+
+.petal-rail.locked {
+  opacity: 0.6;
+}
+
+@media (max-width: 820px) {
+  .petal-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .petal-cell {
+    border-bottom: 1px solid var(--line);
+  }
+}

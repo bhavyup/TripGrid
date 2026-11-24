@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useMemo, useState, type ReactNode } from "react";
+import type { BuilderPetalId } from "../utils/spring";
 import type {
   BuilderCatalogue,
   PresetInfo,
@@ -60,6 +62,10 @@ interface Props {
   onChange: (draft: BuilderDraft) => void;
   /** A query is running: every toggle in the panel goes inert. */
   locked: boolean;
+  /** The focused petal: one bay at a time instead of the full 3-bay composer. */
+  activePetal?: BuilderPetalId;
+  /** The range picker, rendered inside the Time Span petal. */
+  rangeNode?: ReactNode;
 }
 
 function ZonePicker({
@@ -165,11 +171,16 @@ export default function BuilderPanel({
   gate,
   onChange,
   locked,
+  activePetal,
+  rangeNode,
 }: Props) {
   const [filterTab, setFilterTab] = useState<FilterTabId>("geography");
   const [zoneDirection, setZoneDirection] = useState<"pu_zones" | "do_zones">(
     "pu_zones",
   );
+  const [geoSubTab, setGeoSubTab] = useState<"boroughs" | "zones">("boroughs");
+  const [schedSubTab, setSchedSubTab] = useState<"clock" | "bounds">("clock");
+  const reduceMotion = useReducedMotion();
 
   const measureGroups = useMemo(
     () => groupCatalogueMeasures(catalogue.measures),
@@ -313,7 +324,615 @@ export default function BuilderPanel({
         </div>
       </div>
 
-      {/* 3-Bay Structured Composer */}
+      {/* Focused petal bay OR full 3-bay composer */}
+      {activePetal ? (
+        <div className="builder-focused-bay" data-petal={activePetal}>
+          {activeFilterTokens.length > 0 && (
+            <div className="active-filters" aria-label="Active filters">
+              {activeFilterTokens.map((tok) => (
+                <button
+                  key={tok.id}
+                  type="button"
+                  className="af-token"
+                  title={`Remove ${tok.label} filter`}
+                  onClick={() => setFilter(tok.id, undefined)}
+                >
+                  <span className="af-k">{tok.label}:</span>{" "}
+                  <span className="af-v">{tok.value}</span>
+                  <span className="af-x" aria-hidden="true">
+                    ×
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                className="linkbtn mono-xs"
+                onClick={clearAllFilters}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
+
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={activePetal}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: reduceMotion ? 0 : 0.25 }}
+            >
+          {activePetal === "measures" && (
+            <div className="petal-bay-grid petal-bay-measures" role="region" aria-label="Measures">
+              {measureGroups.map((group) => (
+                <div className="bgroup" key={group.id}>
+                  <div className="bgroup-label">
+                    <span>{group.label}</span>
+                    {group.id === "percentiles" && (
+                      <span className="bgroup-note">
+                        ≤ {catalogue.max_pctl_groups} groups
+                      </span>
+                    )}
+                  </div>
+                  <div className="btoggle-grid petal-toggles">
+                    {group.items.map((m) => {
+                      const idx = draft.measures.indexOf(m.id);
+                      const on = idx !== -1;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          title={m.label}
+                          aria-pressed={on}
+                          className={`btoggle${on ? " on" : ""}`}
+                          onClick={() =>
+                            onChange({
+                              ...draft,
+                              measures: toggleIn(draft.measures, m.id),
+                            })
+                          }
+                        >
+                          <span className="btoggle-name">
+                            {shortMeasureLabel(m.id, m.label)}
+                          </span>
+                          {on && draft.measures.length > 1 && idx === 0 && (
+                            <span className="btoggle-rank" title="Primary ranking measure">
+                              1st
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {hasPercentile && (
+                <p className="bbay-foot">
+                  Exact fare tables enforce the {catalogue.max_pctl_groups}-group percentile gate.
+                </p>
+              )}
+            </div>
+          )}
+
+          {activePetal === "dimensions" && (
+            <div className="petal-bay-grid petal-bay-dims" role="region" aria-label="Group By">
+              <div className="petal-dims-cols">
+                {dimGroups.map((group) => (
+                  <div className="bgroup" key={group.id}>
+                    <div className="bgroup-label">
+                      <span>{group.label}</span>
+                    </div>
+                    <div className="btoggle-grid">
+                      {group.items.map((d) => {
+                        const on = draft.dimensions.includes(d.id);
+                        const cardText =
+                          d.cardinality === null
+                            ? "range"
+                            : formatCompactNumber(d.cardinality);
+                        return (
+                          <button
+                            key={d.id}
+                            type="button"
+                            title={`${d.label} — splits output table into rows by ${d.label.toLowerCase()}`}
+                            aria-pressed={on}
+                            className={`btoggle btoggle-dim${d.id === "route" ? " btoggle-wide" : ""}${on ? " on" : ""}`}
+                            onClick={() => handleToggleDimension(d.id)}
+                          >
+                            <span className="btoggle-name">
+                              {shortDimensionLabel(d.id, d.label)}
+                            </span>
+                            <span className="btoggle-card">{cardText}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="boutput petal-output-bar">
+                <div className="boutput-row">
+                  <span className="bgroup-label-inline">Limit</span>
+                  <div className="bseg" role="group" aria-label="Row limit">
+                    {(
+                      [
+                        [null, "All"],
+                        [10, "10"],
+                        [20, "20"],
+                        [50, "50"],
+                        [100, "100"],
+                      ] as [number | null, string][]
+                    ).map(([k, label]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        aria-pressed={draft.top_k === k}
+                        className={draft.top_k === k ? "on" : ""}
+                        onClick={() => onChange({ ...draft, top_k: k })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="boutput-row">
+                  <span className="bgroup-label-inline">Order</span>
+                  <div className="bseg" role="group" aria-label="Sort order">
+                    <button
+                      type="button"
+                      aria-pressed={draft.sort === "measure"}
+                      className={draft.sort === "measure" ? "on" : ""}
+                      onClick={() => onChange({ ...draft, sort: "measure" })}
+                    >
+                      Biggest first
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={draft.sort === "key"}
+                      className={draft.sort === "key" ? "on" : ""}
+                      onClick={() => onChange({ ...draft, sort: "key" })}
+                    >
+                      Group order
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activePetal === "geography" && (
+            <div className="petal-bay-grid" role="region" aria-label="Geography filters">
+              <div className="petal-sub-bar">
+                <div className="bseg" role="tablist" aria-label="Geography filter mode">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={geoSubTab === "boroughs"}
+                    className={geoSubTab === "boroughs" ? "on" : ""}
+                    onClick={() => setGeoSubTab("boroughs")}
+                  >
+                    Boroughs &amp; Airports
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={geoSubTab === "zones"}
+                    className={geoSubTab === "zones" ? "on" : ""}
+                    onClick={() => setGeoSubTab("zones")}
+                  >
+                    Specific Taxi Zones {puZones.length + doZones.length > 0 ? `(${puZones.length + doZones.length})` : ""}
+                  </button>
+                </div>
+              </div>
+
+              {geoSubTab === "boroughs" ? (
+                <div className="petal-two-col">
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Pickup Boroughs</span>
+                      {puBoroughs.length > 0 && (
+                        <button
+                          type="button"
+                          className="linkbtn mono-xs"
+                          onClick={() => setFilter("pu_boroughs", undefined)}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="bchip-grid">
+                      {catalogue.boroughs.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          aria-pressed={puBoroughs.includes(b)}
+                          className={`btoggle sm${puBoroughs.includes(b) ? " on" : ""}`}
+                          onClick={() =>
+                            setFilter("pu_boroughs", toggleIn(puBoroughs, b))
+                          }
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Drop-off Boroughs &amp; Airports</span>
+                      {doBoroughs.length > 0 && (
+                        <button
+                          type="button"
+                          className="linkbtn mono-xs"
+                          onClick={() => setFilter("do_boroughs", undefined)}
+                        >
+                          Clear drop-off
+                        </button>
+                      )}
+                    </div>
+                    <div className="bchip-grid">
+                      {catalogue.boroughs.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          aria-pressed={doBoroughs.includes(b)}
+                          className={`btoggle sm${doBoroughs.includes(b) ? " on" : ""}`}
+                          onClick={() =>
+                            setFilter("do_boroughs", toggleIn(doBoroughs, b))
+                          }
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                    <div
+                      className="bseg"
+                      role="group"
+                      aria-label="Airport pickups"
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 10,
+                        borderTop: "1px solid var(--line-soft)",
+                      }}
+                    >
+                      {(
+                        [
+                          ["off", "Any trip"],
+                          ["any", "All airports"],
+                          ...(airportIds.jfk != null
+                            ? [[String(airportIds.jfk), "JFK"] as [string, string]]
+                            : []),
+                          ...(airportIds.lga != null
+                            ? [[String(airportIds.lga), "LGA"] as [string, string]]
+                            : []),
+                          ...(airportIds.ewr != null
+                            ? [[String(airportIds.ewr), "EWR"] as [string, string]]
+                            : []),
+                        ] as [string, string][]
+                      ).map(([m, label]) => (
+                        <button
+                          key={m}
+                          type="button"
+                          aria-pressed={airportMode === m}
+                          className={airportMode === m ? "on" : ""}
+                          onClick={() => setAirport(m)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="fpane fpane-zones">
+                  <div className="bseg zone-dir-seg" role="tablist" aria-label="Zone direction">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={zoneDirection === "pu_zones"}
+                      className={zoneDirection === "pu_zones" ? "on" : ""}
+                      onClick={() => setZoneDirection("pu_zones")}
+                    >
+                      Pickup Zones {puZones.length > 0 ? `(${puZones.length})` : ""}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={zoneDirection === "do_zones"}
+                      className={zoneDirection === "do_zones" ? "on" : ""}
+                      onClick={() => setZoneDirection("do_zones")}
+                    >
+                      Drop-off Zones {doZones.length > 0 ? `(${doZones.length})` : ""}
+                    </button>
+                  </div>
+                  <ZonePicker
+                    zones={zones}
+                    label={zoneDirection === "pu_zones" ? "Pickup zones" : "Drop-off zones"}
+                    value={zoneDirection === "pu_zones" ? puZones : doZones}
+                    onChange={(ids) => setFilter(zoneDirection, ids)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {activePetal === "schedule" && (
+            <div className="petal-bay-grid" role="region" aria-label="Schedule and trip filters">
+              <div className="petal-sub-bar">
+                <div className="bseg" role="tablist" aria-label="Schedule and trip parameter section">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={schedSubTab === "clock"}
+                    className={schedSubTab === "clock" ? "on" : ""}
+                    onClick={() => setSchedSubTab("clock")}
+                  >
+                    Days &amp; Hours {weekdaysVal.length + hoursVal.length > 0 ? `(${weekdaysVal.length + hoursVal.length})` : ""}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={schedSubTab === "bounds"}
+                    className={schedSubTab === "bounds" ? "on" : ""}
+                    onClick={() => setSchedSubTab("bounds")}
+                  >
+                    Payments &amp; Trip Bounds
+                  </button>
+                </div>
+              </div>
+
+              {schedSubTab === "clock" ? (
+                <div className="fpane fpane-schedule">
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Days of Week</span>
+                      <div className="inline-shortcuts">
+                        {WEEKDAY_PRESETS.map((wp) => (
+                          <button
+                            key={wp.id}
+                            type="button"
+                            className="linkbtn mono-xs"
+                            onClick={() => setFilter("weekdays", wp.days)}
+                          >
+                            {wp.label}
+                          </button>
+                        ))}
+                        {weekdaysVal.length > 0 && (
+                          <button
+                            type="button"
+                            className="linkbtn mono-xs"
+                            onClick={() => setFilter("weekdays", undefined)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="weekday-strip-v2">
+                      {WEEKDAYS_SHORT.map((w, i) => {
+                        const on = weekdaysVal.includes(i);
+                        return (
+                          <button
+                            key={w}
+                            type="button"
+                            aria-pressed={on}
+                            className={`wday-card${on ? " on" : ""}`}
+                            onClick={() =>
+                              setFilter("weekdays", toggleIn(weekdaysVal, i))
+                            }
+                          >
+                            <span className="wday-name">{w}</span>
+                            <span className="wday-kind">{i >= 5 ? "WKND" : "WK"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Hours by Time Band</span>
+                      {hoursVal.length > 0 && (
+                        <button
+                          type="button"
+                          className="linkbtn mono-xs"
+                          onClick={() => setFilter("hours", undefined)}
+                        >
+                          Clear hours
+                        </button>
+                      )}
+                    </div>
+                    <div className="hour-bands">
+                      {HOUR_PRESETS.map((band) => {
+                        const allOn = band.hours.every((h) => hoursVal.includes(h));
+                        const someOn = band.hours.some((h) => hoursVal.includes(h));
+                        const toggleBand = () => {
+                          if (allOn) {
+                            setFilter("hours", hoursVal.filter((h) => !band.hours.includes(h)));
+                          } else {
+                            setFilter(
+                              "hours",
+                              Array.from(new Set([...hoursVal, ...band.hours])).sort((a, b) => a - b),
+                            );
+                          }
+                        };
+                        return (
+                          <div className="hband" key={band.id}>
+                            <button
+                              type="button"
+                              className={`hband-btn${allOn ? " on" : someOn ? " part" : ""}`}
+                              onClick={toggleBand}
+                            >
+                              <span>{band.label.split(" ")[0]}</span>
+                              <span className="hband-span">
+                                {band.label.split(" ").slice(1).join(" ")}
+                              </span>
+                            </button>
+                            <div className="hband-cells">
+                              {band.hours.map((h) => (
+                                <button
+                                  key={h}
+                                  type="button"
+                                  aria-pressed={hoursVal.includes(h)}
+                                  className={`hcell${hoursVal.includes(h) ? " on" : ""}`}
+                                  onClick={() => setFilter("hours", toggleIn(hoursVal, h))}
+                                >
+                                  {String(h).padStart(2, "0")}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="petal-two-col">
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Payment Types</span>
+                      {paymentsVal.length > 0 && (
+                        <button
+                          type="button"
+                          className="linkbtn mono-xs"
+                          onClick={() => setFilter("payment_types", undefined)}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="bchip-grid">
+                      {catalogue.payments.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          aria-pressed={paymentsVal.includes(p.id)}
+                          className={`btoggle sm${paymentsVal.includes(p.id) ? " on" : ""}`}
+                          onClick={() =>
+                            setFilter("payment_types", toggleIn(paymentsVal, p.id))
+                          }
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        aria-pressed={draft.filters["sane_only"] === true}
+                        className={`btoggle full${draft.filters["sane_only"] === true ? " on" : ""}`}
+                        onClick={() =>
+                          setFilter(
+                            "sane_only",
+                            draft.filters["sane_only"] === true ? undefined : true,
+                          )
+                        }
+                      >
+                        <span>Sane trips only (60s–4h, 0.1–200 mi)</span>
+                        <span className="btoggle-card">
+                          {draft.filters["sane_only"] === true ? "ON" : "OFF"}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="bgroup">
+                    <div className="bgroup-label">
+                      <span>Numeric Bounds</span>
+                    </div>
+                    <div className="bounds-grid">
+                      <div className="bound-pair">
+                        <span className="bound-name">Fare ($)</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Minimum fare ($)"
+                          placeholder="Min"
+                          value={numVal("fare_min")}
+                          onChange={(e) => setNum("fare_min", e.target.value)}
+                        />
+                        <span className="bound-dash" aria-hidden="true">–</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Maximum fare ($)"
+                          placeholder="Max"
+                          value={numVal("fare_max")}
+                          onChange={(e) => setNum("fare_max", e.target.value)}
+                        />
+                      </div>
+                      <div className="bound-pair">
+                        <span className="bound-name">Distance (mi)</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Minimum distance (miles)"
+                          placeholder="Min"
+                          value={numVal("dist_min")}
+                          onChange={(e) => setNum("dist_min", e.target.value)}
+                        />
+                        <span className="bound-dash" aria-hidden="true">–</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Maximum distance (miles)"
+                          placeholder="Max"
+                          value={numVal("dist_max")}
+                          onChange={(e) => setNum("dist_max", e.target.value)}
+                        />
+                      </div>
+                      <div className="bound-pair">
+                        <span className="bound-name">Duration (s)</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Minimum duration (seconds)"
+                          placeholder="Min"
+                          value={numVal("dur_min")}
+                          onChange={(e) => setNum("dur_min", e.target.value)}
+                        />
+                        <span className="bound-dash" aria-hidden="true">–</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="any"
+                          aria-label="Maximum duration (seconds)"
+                          placeholder="Max"
+                          value={numVal("dur_max")}
+                          onChange={(e) => setNum("dur_max", e.target.value)}
+                        />
+                      </div>
+                      <div className="bound-pair bound-single">
+                        <span className="bound-name">Min passengers</span>
+                        <input
+                          className="numin-v2"
+                          type="number"
+                          step="1"
+                          min="1"
+                          aria-label="Minimum passengers"
+                          placeholder="Any"
+                          value={numVal("min_passengers")}
+                          onChange={(e) => setNum("min_passengers", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activePetal === "range" && (
+            <div className="petal-bay-grid petal-bay-range" role="region" aria-label="Archive time span">
+              {rangeNode}
+            </div>
+          )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      ) : (
       <div className="bbays">
         {/* BAY 1: MEASURES — dictates the natural height of the control panel */}
         <div className="bbay bbay-measures" role="region" aria-label="Measures">
@@ -1011,6 +1630,7 @@ export default function BuilderPanel({
           </div>
         </div>
       </div>
+    )}
 
       {/* Live Query Blueprint Dossier (matches Preset Dossier clarity) */}
       <div className="bblueprint" aria-label="Query recipe blueprint">

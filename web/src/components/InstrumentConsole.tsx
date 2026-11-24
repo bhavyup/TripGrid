@@ -20,10 +20,14 @@ import {
   formatCompactNumber,
   resolveEffectiveRange,
   rowsToCsv,
+  shortDimensionLabel,
+  shortMeasureLabel,
 } from "../utils/instrument";
 import { useAnimatedNumber } from "../utils/motion";
 import {
+  BUILDER_PETALS,
   computeChoreographyFrame,
+  type BuilderPetalId,
   type ChoreographyFrame,
 } from "../utils/spring";
 
@@ -108,6 +112,71 @@ export default function InstrumentConsole({
   const activePreset = presets.find((p) => p.id === presetId);
   const isAudit = mode === "presets" && activePreset?.kind === "audit";
   const months = meta?.months ?? [];
+  const [activePetal, setActivePetal] = useState<BuilderPetalId>("measures");
+
+  const measureMap = useMemo(
+    () => new Map((catalogue?.measures ?? []).map((m) => [m.id, m.label])),
+    [catalogue],
+  );
+  const dimMap = useMemo(
+    () => new Map((catalogue?.dimensions ?? []).map((d) => [d.id, d.label])),
+    [catalogue],
+  );
+
+  // Live summaries on the five builder petals: what each bay
+  // currently holds, so the rail reads as the question itself.
+  const builderSummaries: Record<BuilderPetalId, string> = useMemo(() => {
+    const mText =
+      draft.measures.length > 0
+        ? draft.measures
+            .slice(0, 2)
+            .map((m) => shortMeasureLabel(m, measureMap.get(m) ?? m))
+            .join(" + ") +
+          (draft.measures.length > 2 ? ` +${draft.measures.length - 2}` : "")
+        : "Pick measure";
+    const dText =
+      draft.dimensions.length > 0
+        ? draft.dimensions
+            .map((d) => shortDimensionLabel(d, dimMap.get(d) ?? d))
+            .join(" × ")
+        : "Single total";
+    const geoTokens: string[] = [];
+    if (Array.isArray(draft.filters.pu_boroughs) && draft.filters.pu_boroughs.length > 0) {
+      geoTokens.push((draft.filters.pu_boroughs as string[]).slice(0, 2).join(", "));
+    }
+    if (Array.isArray(draft.filters.do_boroughs) && draft.filters.do_boroughs.length > 0) {
+      geoTokens.push(`→ ${(draft.filters.do_boroughs as string[]).slice(0, 1).join("")}`);
+    }
+    if (draft.filters.airport === "any") geoTokens.push("All airports");
+    else if (Array.isArray(draft.filters.airport)) geoTokens.push("Airport");
+    const zoneCnt =
+      (Array.isArray(draft.filters.pu_zones) ? draft.filters.pu_zones.length : 0) +
+      (Array.isArray(draft.filters.do_zones) ? draft.filters.do_zones.length : 0);
+    if (zoneCnt > 0) geoTokens.push(`${zoneCnt} zones`);
+    const geoText = geoTokens.length > 0 ? geoTokens.join(" · ") : "All 5 boroughs";
+    const schedCount =
+      (Array.isArray(draft.filters.weekdays) ? 1 : 0) +
+      (Array.isArray(draft.filters.hours) ? 1 : 0) +
+      (Array.isArray(draft.filters.payment_types) ? 1 : 0) +
+      (draft.filters.sane_only ? 1 : 0) +
+      ["fare_min", "fare_max", "dist_min", "dist_max", "dur_min", "dur_max", "min_passengers"].filter(
+        (k) => typeof draft.filters[k] === "number",
+      ).length;
+    const schedText =
+      schedCount > 0
+        ? `${schedCount} bound${schedCount === 1 ? "" : "s"} active`
+        : "24/7 · All fares";
+    const spanText = range
+      ? `${range[0]} → ${range[1]}`
+      : `All ${months.length || 110} months`;
+    return {
+      measures: mText,
+      dimensions: draft.top_k ? `${dText} · Top ${draft.top_k}` : dText,
+      geography: geoText,
+      schedule: schedText,
+      range: spanText,
+    };
+  }, [draft, range, months.length, measureMap, dimMap]);
   const stats = payload?.stats;
 
   const effectiveRange = useMemo(
@@ -333,15 +402,62 @@ export default function InstrumentConsole({
             running={running}
           />
         ) : catalogue ? (
-          <BuilderPanel
-            catalogue={catalogue}
-            zones={zones}
-            presets={presets}
-            draft={draft}
-            gate={gate}
-            onChange={onDraftChange}
-            locked={running}
-          />
+          <>
+            <div
+              className={`petal-rail${running ? " locked" : ""}`}
+              inert={running}
+              role="tablist"
+              aria-label="Query builder sections"
+            >
+              {BUILDER_PETALS.map((petal) => {
+                const selected = petal.id === activePetal;
+                return (
+                  <button
+                    key={petal.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className={`petal-cell${selected ? " active" : ""}`}
+                    onClick={() => setActivePetal(petal.id)}
+                  >
+                    <span className="petal-kicker">
+                      <span className="amber">{petal.code}</span>
+                      <span className="sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span>{petal.title}</span>
+                    </span>
+                    <span className="petal-summary">
+                      {builderSummaries[petal.id]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <BuilderPanel
+              catalogue={catalogue}
+              zones={zones}
+              presets={presets}
+              draft={draft}
+              gate={gate}
+              onChange={onDraftChange}
+              locked={running}
+              activePetal={activePetal}
+              rangeNode={
+                <RangeGrid
+                  months={months}
+                  monthRows={meta?.month_rows ?? {}}
+                  value={range}
+                  effectiveRange={effectiveRange}
+                  mode={mode}
+                  isAudit={isAudit}
+                  defaultExpanded
+                  onChange={onRangeChange}
+                  locked={running}
+                />
+              }
+            />
+          </>
         ) : (
           <div className="inst-loading">
             <span className="mono">Loading Query Builder catalogue…</span>
@@ -349,17 +465,20 @@ export default function InstrumentConsole({
         )}
       </div>
 
-      {/* ---------- 3. ARCHIVE RANGE MAP ---------- */}
-      <RangeGrid
-        months={months}
-        monthRows={meta?.month_rows ?? {}}
-        value={range}
-        effectiveRange={effectiveRange}
-        mode={mode}
-        isAudit={isAudit}
-        onChange={onRangeChange}
-        locked={running}
-      />
+      {/* ---------- 3. ARCHIVE RANGE MAP (presets mode only: in builder
+          mode the range lives in the Time Span petal) ---------- */}
+      {mode === "presets" && (
+        <RangeGrid
+          months={months}
+          monthRows={meta?.month_rows ?? {}}
+          value={range}
+          effectiveRange={effectiveRange}
+          mode={mode}
+          isAudit={isAudit}
+          onChange={onRangeChange}
+          locked={running}
+        />
+      )}
 
       {/* ---------- 4. ANIMATED EXECUTION TELEMETRY STRIP ---------- */}
       <div className="telemetry-bar">
