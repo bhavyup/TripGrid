@@ -4726,31 +4726,42 @@ details.frow[open ] summary.flabel::after {
   pointer-events: none;
 }
 
-/* STEP 7 — output in place of the month map. The carrier + synth
-   live under the map in one row in every phase (synth left, carrier
-   flexing, Run again at the right when done), so nothing jumps when
-   the run lands. The answer scrolls inside the right pane, capped
-   so the theater keeps the map column's height in every phase. */
-.theater-deck-row {
-  display: flex;
+/* STEP 7 — output in place of the month map. The answer swaps in
+   where the month matrix was (framer-motion), and the 4-step
+   pipeline row leaves with it, so the right pane is just the
+   results. The carrier + synth stay under the matrix until the run
+   lands; only then do they move under the map — carrier full-width
+   first, then synth left + Run again right. The answer scrolls
+   inside the right pane (400 px cap). */
+.hud-signal-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 10px;
   align-items: stretch;
+}
+
+.theater-done-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--line-soft);
 }
 
-.theater-deck-row .k8-synth {
+.theater-done-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.theater-done-row .k8-synth {
   flex: 0 0 168px;
 }
 
-.theater-deck-row .mem-scope {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Narrow deck: stack each readout's label over its value. */
-.theater-deck-row .mem-scope-head {
+/* Narrow synth: stack its label over its value. */
+.theater-done-row .mem-scope-head {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -4787,11 +4798,15 @@ details.frow[open ] summary.flabel::after {
 }
 
 @media (max-width: 820px) {
-  .theater-deck-row {
+  .hud-signal-deck {
+    grid-template-columns: 1fr;
+  }
+
+  .theater-done-row {
     flex-wrap: wrap;
   }
 
-  .theater-deck-row .k8-synth {
+  .theater-done-row .k8-synth {
     flex: 1 1 140px;
   }
 }
