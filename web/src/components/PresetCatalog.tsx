@@ -28,6 +28,9 @@ interface Props {
   gate: ValidateResult | null;
   onCustomizeInBuilder: (preset: PresetInfo) => void;
   onSwitchToBuilder: () => void;
+  /** A query is running: the running preset stays highlighted,
+      everything else in the deck goes inert and faded. */
+  running: boolean;
 }
 
 /**
@@ -46,6 +49,7 @@ export default function PresetCatalog({
   gate,
   onCustomizeInBuilder,
   onSwitchToBuilder,
+  running,
 }: Props) {
   const [category, setCategory] = useState<PresetCategoryId>("all");
 
@@ -103,7 +107,10 @@ export default function PresetCatalog({
   }
 
   return (
-    <div className="preset-deck">
+    <div
+      className={`preset-deck${running ? " locked" : ""}`}
+      inert={running}
+    >
       {/* Category filter rail */}
       <div className="cat-rail" role="tablist" aria-label="Preset categories">
         {PRESET_CATEGORY_TABS.map((tab) => {

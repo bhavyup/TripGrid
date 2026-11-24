@@ -233,6 +233,7 @@ export default function InstrumentConsole({
             role="tab"
             aria-selected={mode === "presets"}
             className={mode === "presets" ? "on" : ""}
+            disabled={running}
             onClick={() => onModeChange("presets")}
           >
             Presets
@@ -243,6 +244,7 @@ export default function InstrumentConsole({
             role="tab"
             aria-selected={mode === "builder"}
             className={mode === "builder" ? "on" : ""}
+            disabled={running}
             onClick={() => onModeChange("builder")}
           >
             Query Builder
@@ -285,6 +287,7 @@ export default function InstrumentConsole({
             className={`cmd-fresh${fresh ? " on" : ""}`}
             aria-pressed={fresh}
             title="Skip server cache and execute live from disk"
+            disabled={running}
             onClick={onToggleFresh}
           >
             {fresh ? "Fresh: On" : "Cache: On"}
@@ -327,6 +330,7 @@ export default function InstrumentConsole({
             gate={gate}
             onCustomizeInBuilder={handleCustomizePreset}
             onSwitchToBuilder={() => onModeChange("builder")}
+            running={running}
           />
         ) : catalogue ? (
           <BuilderPanel
@@ -336,6 +340,7 @@ export default function InstrumentConsole({
             draft={draft}
             gate={gate}
             onChange={onDraftChange}
+            locked={running}
           />
         ) : (
           <div className="inst-loading">
@@ -353,6 +358,7 @@ export default function InstrumentConsole({
         mode={mode}
         isAudit={isAudit}
         onChange={onRangeChange}
+        locked={running}
       />
 
       {/* ---------- 4. ANIMATED EXECUTION TELEMETRY STRIP ---------- */}

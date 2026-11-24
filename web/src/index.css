@@ -4798,3 +4798,28 @@ details.frow[open ] summary.flabel::after {
     flex-wrap: wrap;
   }
 }
+
+/* STEP 8 — run lock + one results language. While a query runs,
+   the deck, the builder and the range strip go inert (no clicks,
+   no keyboard activation) and the non-running presets fade, so
+   the running question is the only one that reads as selected;
+   everything comes back the moment the run lands. */
+.preset-deck.locked .pcell:not(.active) {
+  opacity: 0.35;
+}
+
+.preset-deck.locked .cat-tab:not(.on) {
+  opacity: 0.4;
+}
+
+.bworkbench.locked {
+  opacity: 0.6;
+}
+
+.archive-strip.locked {
+  opacity: 0.6;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}

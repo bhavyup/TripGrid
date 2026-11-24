@@ -27,6 +27,8 @@ interface Props {
   mode: "presets" | "builder";
   isAudit: boolean;
   onChange: (range: [string, string] | null) => void;
+  /** A query is running: shortcuts, expander and month cells go inert. */
+  locked: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export default function RangeGrid({
   mode,
   isAudit,
   onChange,
+  locked,
 }: Props) {
   const [pending, setPending] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -100,7 +103,10 @@ export default function RangeGrid({
   const has2024 = months.some((m) => m.startsWith("2024-"));
 
   return (
-    <div className="archive-strip">
+    <div
+      className={`archive-strip${locked ? " locked" : ""}`}
+      inert={locked}
+    >
       <div className="archive-head">
         <div className="archive-head-left">
           <span className="archive-readout">

@@ -58,6 +58,8 @@ interface Props {
   draft: BuilderDraft;
   gate?: ValidateResult | null;
   onChange: (draft: BuilderDraft) => void;
+  /** A query is running: every toggle in the panel goes inert. */
+  locked: boolean;
 }
 
 function ZonePicker({
@@ -162,6 +164,7 @@ export default function BuilderPanel({
   draft,
   gate,
   onChange,
+  locked,
 }: Props) {
   const [filterTab, setFilterTab] = useState<FilterTabId>("geography");
   const [zoneDirection, setZoneDirection] = useState<"pu_zones" | "do_zones">(
@@ -263,7 +266,10 @@ export default function BuilderPanel({
   };
 
   return (
-    <div className="bworkbench">
+    <div
+      className={`bworkbench${locked ? " locked" : ""}`}
+      inert={locked}
+    >
       {/* Top Utility Bar */}
       <div className="btoolbar">
         <div className="btoolbar-left">

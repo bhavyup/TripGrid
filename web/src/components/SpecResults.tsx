@@ -123,10 +123,18 @@ interface Props {
 }
 
 /**
- * One renderer for every recipe answer. The rows are
- * self-describing; the catalogue supplies each measure's label
- * and unit. A single measure gets ranked bars; several measures
- * get a table with a sticky header; the junk audit gets its four verdict lines.
+ * One renderer for every recipe answer, in one visual language.
+ * The rows are self-describing; the catalogue supplies each
+ * measure's label and unit. Every row is a ranked bar row: the
+ * first measure drives the bar and the big value, the rest ride
+ * along as sub-lines beneath it. No header anywhere — the table
+ * variant is gone, so a two-measure answer looks like a
+ * one-measure answer with one more line. The junk audit keeps its
+ * four verdict lines. At most 150 rows mount: a runaway answer
+ * (Q1 returns 30,379 rows) used to mount 30k DOM nodes and every
+ * 100 ms progress tick reconciled all of them — that is what made
+ * the app stick after Q8. The full answer stays one Export CSV
+ * click away.
  */
 export default function SpecResults({ payload, catalogue }: Props) {
   const { result } = payload;
@@ -182,77 +190,52 @@ export default function SpecResults({ payload, catalogue }: Props) {
   const measures = result.spec?.measures ?? [];
   const dims = result.spec?.dimensions ?? [];
   const first = measures[0];
-
-  if (measures.length <= 1) {
-    const max = Math.max(...rows.map((r) => num(r, first) ?? 0), 1);
-    const meta = measureMeta(first);
-    return (
-      <div>
-        {rows.map((r, i) => {
-          const { main, sub } = rowLabel(r, dims, payments);
-          const v = num(r, first);
-          return (
-            <div className="zrow" key={i}>
-              <div className="rk">{String(i + 1).padStart(2, "0")}</div>
-              <div>
-                <span className="zname">{main}</span>
-                {sub && <span className="zsub">{sub}</span>}
-                <div className="bar">
-                  <i style={{ width: `${((v ?? 0) / max) * 100}%` }} />
-                </div>
-              </div>
-              <div className="zv">{fmtValue(meta.unit, v)}</div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
   const maxFirst = Math.max(...rows.map((r) => num(r, first) ?? 0), 1);
+  // Cap what mounts: 150 rows is far more than the panel shows at
+  // once, and the rest of the answer is in Export CSV.
+  const ROW_CAP = 150;
+  const shown = rows.slice(0, ROW_CAP);
   return (
-    <table className="ptable ptable-v2">
-      <thead>
-        <tr>
-          <th style={{ width: 42 }}>#</th>
-          <th>Group</th>
-          {measures.map((m) => (
-            <th className="num" key={m}>
-              {measureMeta(m).label}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => {
-          const { main, sub } = rowLabel(r, dims, payments);
-          return (
-            <tr key={i}>
-              <td className="mono ptable-idx">
-                {String(i + 1).padStart(2, "0")}
-              </td>
-              <td className="who">
-                <div className="who-line">
-                  <span>{main}</span>
-                  {sub && <span className="zsub"> · {sub}</span>}
-                </div>
-                <div className="tipbar tipbar-left">
-                  <i
-                    style={{
-                      width: `${((num(r, first) ?? 0) / maxFirst) * 100}%`,
-                    }}
-                  />
-                </div>
-              </td>
-              {measures.map((m) => (
-                <td className="num" key={m}>
+    <div>
+      {shown.map((r, i) => {
+        const { main, sub } = rowLabel(r, dims, payments);
+        const v = num(r, first);
+        return (
+          <div className="zrow" key={i}>
+            <div className="rk">{String(i + 1).padStart(2, "0")}</div>
+            <div>
+              <span className="zname">{main}</span>
+              {sub && <span className="zsub">{sub}</span>}
+              <div className="bar">
+                <i style={{ width: `${((v ?? 0) / maxFirst) * 100}%` }} />
+              </div>
+            </div>
+            <div className="zv">
+              {fmtValue(measureMeta(first).unit, v)}
+              {measures.slice(1).map((m) => (
+                <span className="zsub" key={m} style={{ display: "block" }}>
+                  {measureMeta(m).label}{" "}
                   {fmtValue(measureMeta(m).unit, num(r, m))}
-                </td>
+                </span>
               ))}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+            </div>
+          </div>
+        );
+      })}
+      {rows.length > ROW_CAP && (
+        <p
+          className="mono"
+          style={{
+            fontSize: 11.5,
+            color: "var(--bone-faint)",
+            padding: "12px 0 4px",
+            borderTop: "1px solid var(--line-soft)",
+          }}
+        >
+          Showing {ROW_CAP} of {fmt(rows.length)} rows — the full answer is
+          in Export CSV.
+        </p>
+      )}
+    </div>
   );
 }
