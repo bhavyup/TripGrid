@@ -22,6 +22,10 @@ import {
   rowsToCsv,
 } from "../utils/instrument";
 import { useAnimatedNumber } from "../utils/motion";
+import {
+  computeChoreographyFrame,
+  type ChoreographyFrame,
+} from "../utils/spring";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -165,6 +169,17 @@ export default function InstrumentConsole({
       : payload
         ? 100
         : 0;
+
+  // 3-act choreography driven by the REAL scan progress (files read so
+  // far), never by a wall clock: the trace, carrier and synth finish
+  // exactly when the query does, fast or slow. The zip's fixed 2.4 s
+  // loop plus its wait-for-animation would have held fast answers back
+  // and left slow ones showing a finished animation mid-scan.
+  const choreography: ChoreographyFrame | null = useMemo(() => {
+    if (!running) return null;
+    const p = filesTotal > 0 ? filesDone / filesTotal : 0.14;
+    return computeChoreographyFrame(p * 2400, 2400);
+  }, [running, filesDone, filesTotal]);
 
   const activeTitle =
     mode === "presets" && activePreset ? activePreset.title : "Custom query recipe";
@@ -380,6 +395,7 @@ export default function InstrumentConsole({
             filesDone={filesDone}
             filesTotal={filesTotal}
             payload={null}
+            choreography={choreography}
           />
         ) : payload ? (
           <div className="result-v2">
@@ -410,7 +426,7 @@ export default function InstrumentConsole({
                   aria-expanded={showReceiptTheater}
                   onClick={() => setShowReceiptTheater((v) => !v)}
                 >
-                  {showReceiptTheater ? "Hide Engine Map" : "Engine Map"}
+                  {showReceiptTheater ? "Hide Stencil Receipt" : "Stencil Receipt"}
                 </button>
                 {payload.result.rows.length > 0 && (
                   <button
