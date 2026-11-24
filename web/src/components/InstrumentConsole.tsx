@@ -366,7 +366,7 @@ export default function InstrumentConsole({
         <div className="runstats-v2">
           <div className="tstat">
             <span className="label">Wall time</span>
-            <div className="v">
+            <div className={`v${!running && stats ? " done" : ""}`}>
               {animWall !== null ? `${animWall.toFixed(2)}s` : "—"}
             </div>
           </div>

@@ -3206,6 +3206,13 @@ details.frow[open ] summary.flabel::after {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 400ms ease;
+}
+
+/* The wall time earns its amber when the run lands — the one number
+   that is the answer's cost, so it reads as the verdict. */
+.tstat .v.done {
+  color: var(--amber);
 }
 
 .tunit {
