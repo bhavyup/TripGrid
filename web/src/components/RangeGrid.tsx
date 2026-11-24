@@ -71,8 +71,6 @@ export default function RangeGrid({
     ? months.filter((m) => m >= activeSpan[0] && m <= activeSpan[1])
     : months;
 
-  const rangeTrips = rangeMonths.reduce((a, m) => a + (monthRows[m] ?? 0), 0);
-
   const pick = (m: string) => {
     if (isAudit) return;
     if (!pending) {
@@ -105,7 +103,6 @@ export default function RangeGrid({
     <div className="archive-strip">
       <div className="archive-head">
         <div className="archive-head-left">
-          <span className="archive-title">Archive Range</span>
           <span className="archive-readout">
             {pending ? (
               <span className="amber">
@@ -116,18 +113,16 @@ export default function RangeGrid({
                 <span className={value ? "amber" : ""}>
                   {activeSpan[0]} → {activeSpan[1]}
                 </span>
-                <span className="sep" aria-hidden="true">·</span>
-                <span>{rangeMonths.length} mo</span>
-                <span className="sep" aria-hidden="true">·</span>
-                <span>{fmt(rangeTrips)} trips</span>
               </>
             ) : (
               <>
-                <span>Whole archive</span>
-                <span className="sep" aria-hidden="true">·</span>
-                <span>{rangeMonths.length} mo</span>
-                <span className="sep" aria-hidden="true">·</span>
-                <span>{fmt(rangeTrips)} trips</span>
+                {rangeMonths.length > 0 ? (
+                  <span>
+                    {rangeMonths[0]} → {rangeMonths[rangeMonths.length - 1]}
+                  </span>
+                ) : (
+                  <span>Whole archive</span>
+                )}
               </>
             )}
           </span>
