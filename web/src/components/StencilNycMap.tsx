@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { SpecDict, ZoneMap } from "../api";
 import {
   NYC_BOROUGHS,
@@ -141,6 +141,22 @@ export default function StencilNycMap({
 }: Props) {
   const [hovered, setHovered] = useState<NycBoroughName | null>(null);
 
+  // 3D parallax tilt, restored from the pre-step-1 theater: the map rests
+  // at a slight isometric lean and follows the cursor; reduced-motion
+  // users keep the rest lean with no mouse follow.
+  const [tilt, setTilt] = useState({ rx: 14, ry: -4 });
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const handleMapMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (prefersReducedMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const nx = (e.clientX - rect.left) / rect.width - 0.5;
+    const ny = (e.clientY - rect.top) / rect.height - 0.5;
+    setTilt({ rx: 14 - ny * 10, ry: -4 + nx * 12 });
+  };
+  const resetTilt = () => setTilt({ rx: 14, ry: -4 });
+
   const geo = useMemo(
     () => resolveActiveGeography(effectiveSpec, zones, isAudit),
     [effectiveSpec, zones, isAudit],
@@ -164,7 +180,11 @@ export default function StencilNycMap({
   const busY = 44;
 
   return (
-    <div className={`stencil-map-wrap${compact ? " compact" : ""}`}>
+    <div
+      className={`stencil-map-wrap${compact ? " compact" : ""}`}
+      onMouseMove={handleMapMove}
+      onMouseLeave={resetTilt}
+    >
       <div className="theater-pane-head">
         <span className="theater-kicker">NYC CARTOGRAPHIC STENCIL</span>
         <span className="theater-badge">
@@ -176,7 +196,12 @@ export default function StencilNycMap({
         </span>
       </div>
 
-      <div className="stencil-frame">
+      <div
+        className="stencil-frame"
+        style={{
+          transform: `perspective(1000px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`,
+        }}
+      >
         <svg
           className="stencil-svg"
           viewBox="0 0 380 340"

@@ -4807,3 +4807,19 @@ details.frow[open ] summary.flabel::after {
     animation: none !important;
   }
 }
+
+/* STEP 2 — stencil parallax (restored from the pre-step-1 theater) */
+.stencil-map-wrap {
+  perspective: 1100px;
+}
+
+.stencil-frame {
+  transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-style: preserve-3d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stencil-frame {
+    transition: none;
+  }
+}

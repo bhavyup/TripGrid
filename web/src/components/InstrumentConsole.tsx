@@ -86,7 +86,6 @@ export default function InstrumentConsole({
   payload,
   onRun,
 }: Props) {
-  const [showReceiptTheater, setShowReceiptTheater] = useState(false);
   const resultsStageRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
 
@@ -412,22 +411,6 @@ export default function InstrumentConsole({
               </div>
 
               <div className="result-meta-actions">
-                <span className="result-meta-text">
-                  {payload.result.rows.length} row
-                  {payload.result.rows.length === 1 ? "" : "s"}
-                  {payload.result.gate
-                    ? ` · ${payload.result.gate.shape}`
-                    : ""}
-                  {payload.cached ? " · Served from memory" : " · Live scan"}
-                </span>
-                <button
-                  type="button"
-                  className={`csv-btn${showReceiptTheater ? " on" : ""}`}
-                  aria-expanded={showReceiptTheater}
-                  onClick={() => setShowReceiptTheater((v) => !v)}
-                >
-                  {showReceiptTheater ? "Hide Stencil Receipt" : "Stencil Receipt"}
-                </button>
                 {payload.result.rows.length > 0 && (
                   <button
                     type="button"
@@ -440,8 +423,7 @@ export default function InstrumentConsole({
               </div>
             </div>
 
-            {showReceiptTheater && (
-              <div className="receipt-theater-wrap">
+            <div className="receipt-theater-wrap">
                 <EngineTheater
                   phase="done"
                   title={payload.result.title}
@@ -457,7 +439,6 @@ export default function InstrumentConsole({
                   payload={payload}
                 />
               </div>
-            )}
 
             <div className="resultscroll-v2">
               <SpecResults payload={payload} catalogue={catalogue} />

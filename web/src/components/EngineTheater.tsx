@@ -284,6 +284,10 @@ export default function EngineTheater({
               Math.min(1, scanPct * 0.55 + digitalPct * 0.45),
           );
 
+  // The act strip is shown only before a run. Kept as a plain boolean so
+  // TypeScript does not narrow `phase` to "ready" inside the strip itself.
+  const showActBar = phase === "ready";
+
   const actBanner =
     phase === "done"
       ? {
@@ -301,26 +305,21 @@ export default function EngineTheater({
       data-progress={Math.round(progress * 100)}
       data-act={hudAct}
     >
-      {/* Top 3-Act Choreography Progress Strip */}
+      {/* Top 3-Act Choreography Progress Strip — shown only before a run.
+          Once a query runs, this row is gone (user). */}
+      {showActBar && (
       <div className="theater-act-bar">
         <div className="act-badge-group">
-          <span className={`act-tag${phase === "scanning" ? " pulse" : ""}`}>
-            {actBanner.tag}
-          </span>
+          <span className="act-tag">{actBanner.tag}</span>
           <span className="act-desc">{actBanner.title}</span>
         </div>
         <div className="act-triad" aria-hidden="true">
-          <span className={`act-tri${mechanicalPct >= 0.99 && phase !== "ready" ? " done" : hudAct === "mechanical" && phase === "scanning" ? " active" : ""}`}>
-            I MECH {phase === "ready" ? "00" : Math.round(mechanicalPct * 100)}%
-          </span>
-          <span className={`act-tri${analogPct >= 0.99 && phase !== "ready" ? " done" : hudAct === "analog" && phase === "scanning" ? " active" : ""}`}>
-            II ANALOG {phase === "ready" ? "00" : Math.round(analogPct * 100)}%
-          </span>
-          <span className={`act-tri${digitalPct >= 0.99 && phase !== "ready" ? " done" : hudAct === "digital" && phase === "scanning" ? " active" : ""}`}>
-            III DIGITAL {phase === "ready" ? "00" : Math.round(digitalPct * 100)}%
-          </span>
+          <span className="act-tri">I MECH 00%</span>
+          <span className="act-tri">II ANALOG 00%</span>
+          <span className="act-tri">III DIGITAL 00%</span>
         </div>
       </div>
+      )}
 
       {/* Top progress hairline sweep during live scan */}
       <div className="theater-rail" aria-hidden="true">
