@@ -4090,14 +4090,18 @@ details.frow[open ] summary.flabel::after {
   transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
+/* Month matrix legibility: the full 10 x 12 grid must read as a
+   map, not as a few lit cells floating in black. Hierarchy:
+   done (amber) > reading (bone + glow) > queued (bone fill) >
+   pruned (etched outline + faint fill) > absent (dimmest cell). */
 .pm-cell.absent {
-  opacity: 0.14;
+  opacity: 0.32;
 }
 
 .pm-cell.pruned {
-  background: transparent;
-  border-color: rgba(44, 41, 37, 0.5);
-  opacity: 0.35;
+  background: rgba(233, 227, 214, 0.06);
+  border-color: rgba(233, 227, 214, 0.35);
+  opacity: 1;
 }
 
 .pm-cell.queued {
