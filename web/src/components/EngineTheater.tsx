@@ -369,8 +369,8 @@ export default function EngineTheater({
           />
           {/* Step 7 fix — before the run lands, the carrier + synth stay
               in the right pane where they were. Only once the run lands
-              do they move here: carrier full-width first, then synth
-              left + Run again right. */}
+              does the carrier move here, beside the rerun button — the
+              same button as RUN QUERY, same size. No synth down here. */}
           <AnimatePresence initial={false}>
             {results && (
               <motion.div
@@ -381,18 +381,15 @@ export default function EngineTheater({
                 transition={{ duration: reduceMotion ? 0 : 0.3, delay: reduceMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
               >
                 {carrierEl}
-                <div className="theater-done-row">
-                  {synthEl}
-                  {onRunAgain && (
-                    <button
-                      type="button"
-                      className="run-again"
-                      onClick={onRunAgain}
-                    >
-                      Run again →
-                    </button>
-                  )}
-                </div>
+                {onRunAgain && (
+                  <button
+                    type="button"
+                    className="cmd-run run-again"
+                    onClick={onRunAgain}
+                  >
+                    Run again →
+                  </button>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
