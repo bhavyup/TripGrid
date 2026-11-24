@@ -170,10 +170,12 @@ export default function InstrumentConsole({
         : 0;
 
   // 3-act choreography driven by the REAL scan progress (files read so
-  // far), never by a wall clock: the trace, carrier and synth finish
-  // exactly when the query does, fast or slow. The zip's fixed 2.4 s
-  // loop plus its wait-for-animation would have held fast answers back
-  // and left slow ones showing a finished animation mid-scan.
+  // far), never by a wall clock: the carrier and synth finish exactly
+  // when the query does, fast or slow. The zip's fixed 2.4 s loop plus
+  // its wait-for-animation would have held fast answers back and left
+  // slow ones showing a finished animation mid-scan. The map trace
+  // itself follows raw file progress (see EngineTheater), so the pen
+  // finishes with the month matrix and the query.
   const choreography: ChoreographyFrame | null = useMemo(() => {
     if (!running) return null;
     const p = filesTotal > 0 ? filesDone / filesTotal : 0.14;

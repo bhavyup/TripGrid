@@ -277,6 +277,39 @@ function awaitJob(
         /* keep polling */
       }
     }, 900);
+    // The server reports progress per file finished; over the whole
+    // archive that is ~50 events a second, and every one re-rendered the
+    // entire theater (heavy SVG + 1320-cell month matrix), which froze the
+    // tab on long runs. Forward at most one update per 100 ms, always with
+    // the latest values; the final numbers come from the job payload anyway.
+    let lastProgressAt = 0;
+    let pendingProgress: { done: number; total: number } | null = null;
+    let progressTimer: number | undefined;
+    const flushProgress = () => {
+      progressTimer = undefined;
+      if (pendingProgress) {
+        lastProgressAt = Date.now();
+        onProgress(pendingProgress.done, pendingProgress.total);
+        pendingProgress = null;
+      }
+    };
+    const reportProgress = (done: number, total: number) => {
+      const now = Date.now();
+      if (now - lastProgressAt >= 100) {
+        lastProgressAt = now;
+        pendingProgress = null;
+        if (progressTimer !== undefined) {
+          window.clearTimeout(progressTimer);
+          progressTimer = undefined;
+        }
+        onProgress(done, total);
+      } else {
+        pendingProgress = { done, total };
+        if (progressTimer === undefined) {
+          progressTimer = window.setTimeout(flushProgress, 100 - (now - lastProgressAt));
+        }
+      }
+    };
     const es = new EventSource(`/api/jobs/${jobId}/events`);
     es.onmessage = (ev) => {
       try {
@@ -286,7 +319,7 @@ function awaitJob(
           total?: number;
         };
         if (event.type === "progress" && event.done != null && event.total != null) {
-          onProgress(event.done, event.total);
+          reportProgress(event.done, event.total);
         } else if (event.type === "done" || event.type === "error") {
           getJson<JobBody>(`/api/jobs/${jobId}`)
             .then(finish)
@@ -301,6 +334,7 @@ function awaitJob(
     };
     const cleanup = () => {
       window.clearInterval(poll);
+      if (progressTimer !== undefined) window.clearTimeout(progressTimer);
       es.close();
     };
   });

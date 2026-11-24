@@ -96,14 +96,16 @@ export default function EngineTheater({
         ? 0
         : choreography?.mechanicalPct ?? Math.min(1, progress * 3);
 
+  // The pen traces the map at exactly the query's own pace (raw file
+  // fraction), so it finishes with the month matrix and the query itself.
+  // Two traps, both measured: the choreography's Act II window finished
+  // the trace at ~64% of the files, and the choreography's `progress` is
+  // easeInOutCubic, so it still ran ~0.1 ahead of the files past halfway.
+  // The carrier and synth below still keep the 3-act pacing.
+  const rawProgress =
+    phase === "done" ? 1 : filesTotal > 0 ? Math.min(1, filesDone / filesTotal) : 0;
   const tracePct =
-    phase === "done"
-      ? 1
-      : phase === "ready"
-        ? 1
-        : choreography
-          ? choreography.tracePct
-          : Math.min(1, progress * 1.3);
+    phase === "done" ? 1 : phase === "ready" ? 1 : rawProgress;
 
   const analogPct =
     phase === "done"

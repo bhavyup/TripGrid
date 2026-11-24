@@ -94,8 +94,10 @@ export default function StencilNycMap({
         ? 0.24
         : 0.04 + Math.max(0, (drawRatio - 0.35) / 0.65) * 0.22;
 
-  const busX = 338;
-  const busY = 44;
+  // 8T BUS collector sits in the empty Atlantic corner (bottom-right) now:
+  // the zoomed map reaches the top-right where it used to sit.
+  const busX = 335;
+  const busY = 312;
 
   return (
     <div
@@ -183,7 +185,7 @@ export default function StencilNycMap({
 
           <rect x="0" y="0" width="380" height="340" fill="url(#stencilGrid)" />
 
-          <text x="170" y="88" className="stencil-water-lbl" transform="rotate(-82 170 88)">
+          <text x="186" y="88" className="stencil-water-lbl" transform="rotate(-82 186 88)">
             HUDSON R.
           </text>
           <text x="106" y="324" className="stencil-water-lbl">
@@ -348,7 +350,7 @@ export default function StencilNycMap({
           <text x="12" y="16" className="nyc-coord">
             40°42&prime;N · 74°00&prime;W · TLC ZONES
           </text>
-          <g transform="translate(228, 322)">
+          <g transform="translate(150, 322)">
             <line x1="0" y1="0" x2={REAL_SCALE_BAR_UNITS} y2="0" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
             <line x1="0" y1="-3" x2="0" y2="3" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
             <line x1={REAL_SCALE_BAR_UNITS / 2} y1="-2" x2={REAL_SCALE_BAR_UNITS / 2} y2="2" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
