@@ -5,6 +5,13 @@ import {
   resolveActiveGeography,
   type NycBoroughName,
 } from "../utils/instrument";
+import {
+  REAL_AIRPORTS,
+  REAL_BOROUGH_STENCILS,
+  REAL_BRIDGES,
+  REAL_SCALE_BAR_UNITS,
+  REAL_ZONE_BOUNDARIES,
+} from "../utils/nycRealZones";
 
 interface Props {
   phase: "ready" | "scanning" | "done";
@@ -18,106 +25,17 @@ interface Props {
   compact?: boolean;
 }
 
-interface BoroughGeometry {
-  name: NycBoroughName;
-  code: string;
-  path: string;
-  detailPaths?: string[];
-  labelX: number;
-  labelY: number;
-  busAnchorX: number;
-  busAnchorY: number;
-}
-
 /**
- * Multi-vertex cartographic stencil silhouettes of New York City's five boroughs,
- * plotted in a 380x340 projection (Hudson west, Upper Harbor center, Jamaica Bay SE).
+ * Real NYC geometry: the TLC official taxi-zone shapes, unioned per borough.
+ * Same 380x340 viewBox; zone boundaries, parks, airports and bridges are all
+ * projected from the same file (utils/nycRealZones.ts).
  */
-const BOROUGH_STENCILS: BoroughGeometry[] = [
-  {
-    name: "Bronx",
-    code: "BX",
-    path:
-      "M 176 42 L 182 22 L 210 18 L 246 22 L 266 36 L 262 56 L 274 68 L 258 82 L 242 78 L 236 90 L 218 92 L 204 86 L 186 88 L 178 72 Z",
-    detailPaths: [
-      "M 192 48 L 248 44",
-      "M 214 26 L 218 78",
-    ],
-    labelX: 222,
-    labelY: 56,
-    busAnchorX: 234,
-    busAnchorY: 60,
-  },
-  {
-    name: "Manhattan",
-    code: "MN",
-    path:
-      "M 174 44 L 178 68 L 171 92 L 166 114 L 161 138 L 158 164 L 162 178 L 152 192 L 142 204 L 134 202 L 136 184 L 141 154 L 146 126 L 154 96 L 162 68 L 168 48 Z",
-    detailPaths: [
-      // Central Park stencil cutout
-      "M 157 98 L 164 99 L 159 124 L 152 123 Z",
-      // Midtown street grid ticks
-      "M 145 140 L 158 142 M 143 152 L 157 154 M 141 164 L 156 166",
-    ],
-    labelX: 152,
-    labelY: 150,
-    busAnchorX: 158,
-    busAnchorY: 136,
-  },
-  {
-    name: "Queens",
-    code: "QN",
-    path:
-      "M 174 114 L 194 102 L 212 96 L 224 106 L 236 98 L 258 88 L 284 86 L 314 96 L 328 118 L 322 152 L 312 184 L 298 206 L 286 222 L 266 220 L 254 204 L 236 212 L 222 196 L 204 172 L 182 156 L 168 144 Z",
-    detailPaths: [
-      // Rockaway barrier spit
-      "M 218 256 L 268 242 L 304 234 L 306 241 L 266 250 L 220 262 Z",
-      // Flushing / Queens Blvd arterial
-      "M 178 134 L 246 144 L 304 152",
-    ],
-    labelX: 256,
-    labelY: 150,
-    busAnchorX: 266,
-    busAnchorY: 132,
-  },
-  {
-    name: "Brooklyn",
-    code: "BK",
-    path:
-      "M 166 148 L 182 158 L 204 174 L 218 196 L 230 218 L 218 242 L 196 254 L 186 274 L 164 282 L 140 278 L 136 266 L 146 258 L 124 246 L 122 224 L 134 212 L 132 198 L 144 186 L 154 174 Z",
-    detailPaths: [
-      // Prospect Park + Atlantic Ave stencil
-      "M 164 206 L 176 208 L 172 222 L 160 218 Z",
-      "M 150 184 L 204 198",
-    ],
-    labelX: 168,
-    labelY: 236,
-    busAnchorX: 184,
-    busAnchorY: 214,
-  },
-  {
-    name: "Staten Island",
-    code: "SI",
-    path:
-      "M 96 240 L 108 248 L 112 262 L 102 276 L 88 288 L 72 302 L 46 318 L 24 326 L 18 314 L 32 294 L 42 272 L 46 248 L 68 242 Z",
-    detailPaths: [
-      "M 52 266 L 94 260",
-      "M 42 296 L 84 276",
-    ],
-    labelX: 68,
-    labelY: 280,
-    busAnchorX: 86,
-    busAnchorY: 262,
-  },
-];
+const BOROUGH_STENCILS = REAL_BOROUGH_STENCILS;
 
-const BRIDGES: { name: string; d: string }[] = [
-  { name: "GW Bridge", d: "M 136 68 L 164 72" },
-  { name: "Queensboro", d: "M 161 138 L 173 136" },
-  { name: "Brooklyn/Manhattan", d: "M 152 186 L 160 188 M 148 194 L 155 196" },
-  { name: "Verrazzano", d: "M 110 258 L 124 252" },
-  { name: "RFK / Triboro", d: "M 172 100 L 188 102" },
-];
+// Bridges as short ticks at their real crossing points.
+const BRIDGES: { name: string; d: string }[] = Object.entries(REAL_BRIDGES).map(
+  ([name, { x, y }]) => ({ name, d: `M ${x - 7} ${y} L ${x + 7} ${y}` }),
+);
 
 const AIRPORTS: {
   code: "JFK" | "LGA" | "EWR";
@@ -125,9 +43,9 @@ const AIRPORTS: {
   y: number;
   borough: string;
 }[] = [
-  { code: "LGA", x: 214, y: 103, borough: "Queens" },
-  { code: "JFK", x: 274, y: 206, borough: "Queens" },
-  { code: "EWR", x: 48, y: 188, borough: "Newark" },
+  { code: "LGA", ...REAL_AIRPORTS.LGA, borough: "Queens" },
+  { code: "JFK", ...REAL_AIRPORTS.JFK, borough: "Queens" },
+  { code: "EWR", ...REAL_AIRPORTS.EWR, borough: "Newark" },
 ];
 
 export default function StencilNycMap({
@@ -265,25 +183,7 @@ export default function StencilNycMap({
 
           <rect x="0" y="0" width="380" height="340" fill="url(#stencilGrid)" />
 
-          {/* NJ / Newark mainland stencil silhouette on far west */}
-          <path
-            d="M 10 18 L 122 18 L 116 68 L 106 124 L 96 176 L 78 214 L 46 232 L 10 240 Z"
-            className="stencil-nj"
-          />
-          <text x="20" y="138" className="stencil-water-lbl">
-            NEW JERSEY
-          </text>
-
-          {/* Harbor & river bathymetric contour lines */}
-          <path
-            d="M 136 12 C 134 78, 128 142, 118 212 C 114 234, 118 262, 124 300"
-            className="stencil-waterway"
-          />
-          <path
-            d="M 164 96 C 174 114, 168 148, 158 178 C 146 198, 128 214, 118 232"
-            className="stencil-waterway"
-          />
-          <text x="108" y="88" className="stencil-water-lbl" transform="rotate(-82 108 88)">
+          <text x="170" y="88" className="stencil-water-lbl" transform="rotate(-82 170 88)">
             HUDSON R.
           </text>
           <text x="106" y="324" className="stencil-water-lbl">
@@ -373,6 +273,9 @@ export default function StencilNycMap({
             );
           })}
 
+          {/* Real zone boundaries — all 263 TLC zones, faint background texture */}
+          <path d={REAL_ZONE_BOUNDARIES} className="stencil-zones" />
+
           {/* Airport Runway Stencils */}
           {AIRPORTS.map((ap, apIdx) => {
             const active = activeAirports.has(ap.code);
@@ -443,14 +346,14 @@ export default function StencilNycMap({
 
           {/* Drafting Corner Crosshairs & Scale Bar */}
           <text x="12" y="16" className="nyc-coord">
-            40°42&prime;N · 74°00&prime;W · EPSG:2263
+            40°42&prime;N · 74°00&prime;W · TLC ZONES
           </text>
-          <g transform="translate(274, 322)">
-            <line x1="0" y1="0" x2="64" y2="0" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
+          <g transform="translate(228, 322)">
+            <line x1="0" y1="0" x2={REAL_SCALE_BAR_UNITS} y2="0" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
             <line x1="0" y1="-3" x2="0" y2="3" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
-            <line x1="32" y1="-2" x2="32" y2="2" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
-            <line x1="64" y1="-3" x2="64" y2="3" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
-            <text x="68" y="3" className="nyc-coord">
+            <line x1={REAL_SCALE_BAR_UNITS / 2} y1="-2" x2={REAL_SCALE_BAR_UNITS / 2} y2="2" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
+            <line x1={REAL_SCALE_BAR_UNITS} y1="-3" x2={REAL_SCALE_BAR_UNITS} y2="3" stroke="rgba(167, 158, 141, 0.45)" strokeWidth="1" />
+            <text x={REAL_SCALE_BAR_UNITS + 4} y="3" className="nyc-coord">
               10 MI
             </text>
           </g>

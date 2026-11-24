@@ -4749,3 +4749,11 @@ details.frow[open ] summary.flabel::after {
     transition: none;
   }
 }
+
+/* ---- Step 3 (real zone shapes): faint zone-boundary layer ---- */
+.stencil-zones {
+  fill: none;
+  stroke: rgba(233, 227, 214, 0.1);
+  stroke-width: 0.5;
+  pointer-events: none;
+}
