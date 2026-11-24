@@ -30,25 +30,6 @@ const PIPELINE_STEPS = [
   { num: "04", label: "Parity" },
 ];
 
-const ACT_META: Record<HudAct, { tag: string; title: string }> = {
-  mechanical: {
-    tag: "ACT I · MECHANICAL",
-    title: "Locking vernier ring & arming partition relays",
-  },
-  analog: {
-    tag: "ACT II · ANALOG",
-    title: "Pen-tracing borough contours & carrier telemetry",
-  },
-  digital: {
-    tag: "ACT III · DIGITAL",
-    title: "Synthesizing 8-thread kernel buckets & parity checksum",
-  },
-  locked: {
-    tag: "ARMED",
-    title: "Out-of-core execution core ready under 2,048 MB",
-  },
-};
-
 /**
  * Central HUD Execution Core Theater:
  * Visually progresses through Act I (Mechanical) -> Act II (Analog) -> Act III (Digital)
@@ -284,20 +265,6 @@ export default function EngineTheater({
               Math.min(1, scanPct * 0.55 + digitalPct * 0.45),
           );
 
-  // The act strip is shown only before a run. Kept as a plain boolean so
-  // TypeScript does not narrow `phase` to "ready" inside the strip itself.
-  const showActBar = phase === "ready";
-
-  const actBanner =
-    phase === "done"
-      ? {
-          tag: "LOCKED · VERIFIED",
-          title: payload
-            ? `${formatCompactNumber(payload.stats.rows_scanned)} rows matched against DuckDB`
-            : "Results locked and verified",
-        }
-      : ACT_META[hudAct];
-
   return (
     <div
       className={`theater theater-${phase} act-stage-${hudAct}`}
@@ -305,22 +272,6 @@ export default function EngineTheater({
       data-progress={Math.round(progress * 100)}
       data-act={hudAct}
     >
-      {/* Top 3-Act Choreography Progress Strip — shown only before a run.
-          Once a query runs, this row is gone (user). */}
-      {showActBar && (
-      <div className="theater-act-bar">
-        <div className="act-badge-group">
-          <span className="act-tag">{actBanner.tag}</span>
-          <span className="act-desc">{actBanner.title}</span>
-        </div>
-        <div className="act-triad" aria-hidden="true">
-          <span className="act-tri">I MECH 00%</span>
-          <span className="act-tri">II ANALOG 00%</span>
-          <span className="act-tri">III DIGITAL 00%</span>
-        </div>
-      </div>
-      )}
-
       {/* Top progress hairline sweep during live scan */}
       <div className="theater-rail" aria-hidden="true">
         <i style={{ width: `${Math.round(progress * 100)}%` }} />

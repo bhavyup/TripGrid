@@ -445,6 +445,15 @@ export default function InstrumentConsole({
             </div>
           </div>
         ) : (
+          <div className="result-v2">
+            <div className="result-head-v2">
+              <div className="result-title-group">
+                <span className="result-kind">
+                  {isAudit ? "Audit" : mode === "builder" ? "Builder" : "Preset"}
+                </span>
+                <h3>{activeTitle}</h3>
+              </div>
+            </div>
           <EngineTheater
             phase="ready"
             title={activeTitle}
@@ -460,6 +469,7 @@ export default function InstrumentConsole({
             payload={null}
             onRun={onRun}
           />
+          </div>
         )}
       </div>
     </div>

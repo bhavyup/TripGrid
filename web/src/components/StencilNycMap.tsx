@@ -142,9 +142,9 @@ export default function StencilNycMap({
   const [hovered, setHovered] = useState<NycBoroughName | null>(null);
 
   // 3D parallax tilt, restored from the pre-step-1 theater: the map rests
-  // at a slight isometric lean and follows the cursor; reduced-motion
-  // users keep the rest lean with no mouse follow.
-  const [tilt, setTilt] = useState({ rx: 14, ry: -4 });
+  // FLAT and only leans while the cursor is over it (a rest lean made the
+  // frame spill out of its box); reduced-motion users stay flat.
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
   const prefersReducedMotion =
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -153,9 +153,9 @@ export default function StencilNycMap({
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width - 0.5;
     const ny = (e.clientY - rect.top) / rect.height - 0.5;
-    setTilt({ rx: 14 - ny * 10, ry: -4 + nx * 12 });
+    setTilt({ rx: -ny * 10, ry: nx * 12 });
   };
-  const resetTilt = () => setTilt({ rx: 14, ry: -4 });
+  const resetTilt = () => setTilt({ rx: 0, ry: 0 });
 
   const geo = useMemo(
     () => resolveActiveGeography(effectiveSpec, zones, isAudit),
