@@ -132,11 +132,20 @@ export default function App() {
     );
   }, [signature]);
 
-  const run = useCallback(async () => {
+  // forceFresh bypasses the server cache: the Run again button in
+  // the theater always re-reads the files, even when the Fresh
+  // toggle is off. NOTE: run is wired straight into onClick
+  // handlers, so React passes the click event as the first
+  // argument — only a real boolean counts as forceFresh, or the
+  // event object lands in the POST body and JSON.stringify throws
+  // on its circular DOM fiber (caught live 24 Nov: "Converting
+  // circular structure to JSON ... HTMLButtonElement").
+  const run = useCallback(async (forceFresh?: boolean) => {
     if (running) return;
     if (mode === "presets" && !activePreset) return;
     if (mode === "builder" && !effectiveSpec) return;
     if (!isAudit && gate && !gate.ok) return;
+    const useFresh = typeof forceFresh === "boolean" ? forceFresh : fresh;
     setRunning(true);
     setPayload(null);
     setFilesDone(0);
@@ -158,8 +167,8 @@ export default function App() {
     try {
       const result =
         mode === "builder"
-          ? await runSpec(effectiveSpec as SpecDict, prog, fresh)
-          : await runPreset(presetId, isAudit ? null : range, prog, fresh);
+          ? await runSpec(effectiveSpec as SpecDict, prog, useFresh)
+          : await runPreset(presetId, isAudit ? null : range, prog, useFresh);
       cacheRef.current.set(signature, result);
       setPayload(result);
       // A real preset execution may have landed in the Evidence
@@ -179,6 +188,13 @@ export default function App() {
       setRunning(false);
     }
   }, [running, mode, activePreset, effectiveSpec, gate, presetId, isAudit, range, fresh, signature, refreshLive]);
+
+  // Run the same question again, fresh from disk. The theater's
+  // Run again button calls this; the month map comes back for the
+  // re-read and the answer lands in the right pane again.
+  const runAgain = useCallback(() => {
+    void run(true);
+  }, [run]);
 
   const freshness = meta?.freshness;
   const freshnessLine = !freshness
@@ -297,6 +313,7 @@ export default function App() {
           status={status}
           payload={payload}
           onRun={run}
+          onRunAgain={runAgain}
         />
       </section>
 

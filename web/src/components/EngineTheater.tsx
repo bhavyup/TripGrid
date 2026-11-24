@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import type { ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { SpecDict, SpecJobPayload, ValidateResult, ZoneMap } from "../api";
 import { formatCompactNumber } from "../utils/instrument";
 import type { ChoreographyFrame, HudAct } from "../utils/spring";
@@ -19,6 +21,10 @@ interface Props {
   payload: SpecJobPayload | null;
   choreography?: ChoreographyFrame | null;
   onRun?: () => void;
+  // The answer node (SpecResults), present only once a run lands;
+  // the theater swaps it in where the month matrix was.
+  results?: ReactNode;
+  onRunAgain?: () => void;
 }
 
 const MONTH_INITIALS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
@@ -51,6 +57,8 @@ export default function EngineTheater({
   payload,
   choreography,
   onRun,
+  results,
+  onRunAgain,
 }: Props) {
   const monthSet = useMemo(() => new Set(months), [months]);
   const years = useMemo(() => {
@@ -162,6 +170,10 @@ export default function EngineTheater({
       ? Math.max(filesDone, Math.round(scanPct * (filesTotal || selectedMonths.length)))
       : filesDone;
   const displayTotal = filesTotal || selectedMonths.length;
+
+  // The matrix -> answer swap glides; reduced-motion users get
+  // the swap instantly, with no slide or fade.
+  const reduceMotion = useReducedMotion();
 
   // Dual-channel Analog Carrier Oscilloscope + Memory Redline
   const memTrace = useMemo(() => {
@@ -285,92 +297,40 @@ export default function EngineTheater({
             tracePct={tracePct}
             progress={progress}
           />
-        </div>
-
-        {/* RIGHT: 4-Stage Pipeline + 10×12 Matrix + Analog Oscilloscope + Digital 8T Matrix */}
-        <div className="theater-scan-pane">
-          {/* 4-Stage Pipeline Stepper */}
-          <div className="pipe-steps" aria-label="Execution pipeline">
-            {PIPELINE_STEPS.map((st, idx) => {
-              const state =
-                phase === "done" || idx < activePipelineIdx
-                  ? "done"
-                  : phase === "scanning" && idx === activePipelineIdx
-                    ? "active"
-                    : "idle";
-              return (
-                <div className={`pipe-step ${state}`} key={st.num}>
-                  <span className="pipe-num">{st.num}</span>
-                  <span className="pipe-lbl">{st.label}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Live 10-Year × 12-Month Partition Matrix */}
-          <div className="pmatrix-wrap">
-            <div className="theater-pane-head">
-              <span className="theater-kicker">
-                {phase === "scanning"
-                  ? `STREAMING ARCHIVE · ${displayDone}/${displayTotal} FILES`
-                  : phase === "done"
-                    ? `SCAN RECEIPT · ${selectedMonths.length} MONTHS READ`
-                    : `PARTITION PLAN · ${selectedMonths.length} MONTHS SELECTED`}
-              </span>
-              <span className="theater-badge">
-                {effectiveRange
-                  ? `${effectiveRange[0]} → ${effectiveRange[1]}`
-                  : "WHOLE ARCHIVE"}
-              </span>
-            </div>
-
-            <div className="pmatrix" aria-label="Partition scan matrix">
-              <div className="pm-row pm-head" aria-hidden="true">
-                <span className="pm-yr" />
-                <div className="pm-cells">
-                  {MONTH_INITIALS.map((m, idx) => (
-                    <span className="pm-mhead" key={idx}>
-                      {m}
-                    </span>
-                  ))}
-                </div>
+          {/* Step 7 — the carrier + synth live under the map in one row in
+              every phase (synth left, carrier flexing, Run again at the
+              right when done), so nothing jumps when the run lands. */}
+          <div className="theater-deck-row">
+            <div className="k8-synth">
+              <div className="mem-scope-head">
+                <span className="theater-kicker">DIGITAL 8T SYNTHESIS</span>
+                <span className="mem-scope-val mono">
+                  {phase === "ready"
+                    ? "8 LANES ARMED"
+                    : `${formatCompactNumber(liveRowsOdometer)} ROWS`}
+                </span>
               </div>
-              {years.map((yr) => (
-                <div className="pm-row" key={yr}>
-                  <span className="pm-yr">{String(yr).slice(2)}</span>
-                  <div className="pm-cells">
-                    {Array.from({ length: 12 }, (_, i) => {
-                      const ym = `${yr}-${String(i + 1).padStart(2, "0")}`;
-                      const present = monthSet.size === 0 || monthSet.has(ym);
-                      const selIdx = selectedIndexMap.get(ym);
-                      let cls = "pm-cell";
-                      if (!present) {
-                        cls += " absent";
-                      } else if (selIdx === undefined) {
-                        cls += " pruned";
-                      } else if (phase === "ready") {
-                        cls += " queued";
-                      } else if (phase === "done") {
-                        cls += " done";
-                      } else {
-                        if (selIdx < scannedCount - headWidth) {
-                          cls += " done";
-                        } else if (selIdx <= scannedCount) {
-                          cls += " reading";
-                        } else {
-                          cls += " queued";
+              <div className="k8-lanes" aria-hidden="true">
+                {k8Threads.map((t) => (
+                  <div key={t.id} className="k8-lane">
+                    <div className="k8-track">
+                      <i
+                        className={
+                          phase === "done"
+                            ? "locked"
+                            : hudAct === "digital"
+                              ? "synthesizing"
+                              : ""
                         }
-                      }
-                      return <span key={ym} className={cls} title={ym} />;
-                    })}
+                        style={{ height: `${Math.round(t.level * 100)}%` }}
+                      />
+                    </div>
+                    <span className="k8-lbl">{t.id}</span>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Dual-Stage Analog Carrier Oscilloscope + Digital 8-Thread Synthesis */}
-          <div className="hud-signal-deck">
             <div className="mem-scope">
               <div className="mem-scope-head">
                 <span className="theater-kicker">ANALOG CARRIER · 2 GB CEIL</span>
@@ -404,37 +364,128 @@ export default function EngineTheater({
               </svg>
             </div>
 
-            <div className="k8-synth">
-              <div className="mem-scope-head">
-                <span className="theater-kicker">DIGITAL 8T SYNTHESIS</span>
-                <span className="mem-scope-val mono">
-                  {phase === "ready"
-                    ? "8 LANES ARMED"
-                    : `${formatCompactNumber(liveRowsOdometer)} ROWS`}
+            <AnimatePresence>
+              {phase === "done" && onRunAgain && (
+                <motion.button
+                  type="button"
+                  className="run-again"
+                  onClick={onRunAgain}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.25, ease: "easeOut" }}
+                >
+                  Run again →
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* RIGHT: 4-Stage Pipeline + 10×12 Matrix + Analog Oscilloscope + Digital 8T Matrix */}
+        <div className="theater-scan-pane">
+          {/* 4-Stage Pipeline Stepper */}
+          <div className="pipe-steps" aria-label="Execution pipeline">
+            {PIPELINE_STEPS.map((st, idx) => {
+              const state =
+                phase === "done" || idx < activePipelineIdx
+                  ? "done"
+                  : phase === "scanning" && idx === activePipelineIdx
+                    ? "active"
+                    : "idle";
+              return (
+                <div className={`pipe-step ${state}`} key={st.num}>
+                  <span className="pipe-num">{st.num}</span>
+                  <span className="pipe-lbl">{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Live 10-Year × 12-Month Partition Matrix — swapped for the
+              answer (framer-motion) once the run lands. */}
+          <AnimatePresence mode="wait" initial={false}>
+            {results ? (
+              <motion.div
+                key="results"
+                className="theater-results-wrap"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: reduceMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {results}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="matrix"
+                className="pmatrix-wrap"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: reduceMotion ? 0 : 0.25, ease: "easeOut" }}
+              >
+              <div className="theater-pane-head">
+                <span className="theater-kicker">
+                  {phase === "scanning"
+                    ? `STREAMING ARCHIVE · ${displayDone}/${displayTotal} FILES`
+                    : phase === "done"
+                      ? `SCAN RECEIPT · ${selectedMonths.length} MONTHS READ`
+                      : `PARTITION PLAN · ${selectedMonths.length} MONTHS SELECTED`}
+                </span>
+                <span className="theater-badge">
+                  {effectiveRange
+                    ? `${effectiveRange[0]} → ${effectiveRange[1]}`
+                    : "WHOLE ARCHIVE"}
                 </span>
               </div>
-              <div className="k8-lanes" aria-hidden="true">
-                {k8Threads.map((t) => (
-                  <div key={t.id} className="k8-lane">
-                    <div className="k8-track">
-                      <i
-                        className={
-                          phase === "done"
-                            ? "locked"
-                            : hudAct === "digital"
-                              ? "synthesizing"
-                              : ""
+
+              <div className="pmatrix" aria-label="Partition scan matrix">
+                <div className="pm-row pm-head" aria-hidden="true">
+                  <span className="pm-yr" />
+                  <div className="pm-cells">
+                    {MONTH_INITIALS.map((m, idx) => (
+                      <span className="pm-mhead" key={idx}>
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {years.map((yr) => (
+                  <div className="pm-row" key={yr}>
+                    <span className="pm-yr">{String(yr).slice(2)}</span>
+                    <div className="pm-cells">
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const ym = `${yr}-${String(i + 1).padStart(2, "0")}`;
+                        const present = monthSet.size === 0 || monthSet.has(ym);
+                        const selIdx = selectedIndexMap.get(ym);
+                        let cls = "pm-cell";
+                        if (!present) {
+                          cls += " absent";
+                        } else if (selIdx === undefined) {
+                          cls += " pruned";
+                        } else if (phase === "ready") {
+                          cls += " queued";
+                        } else if (phase === "done") {
+                          cls += " done";
+                        } else {
+                          if (selIdx < scannedCount - headWidth) {
+                            cls += " done";
+                          } else if (selIdx <= scannedCount) {
+                            cls += " reading";
+                          } else {
+                            cls += " queued";
+                          }
                         }
-                        style={{ height: `${Math.round(t.level * 100)}%` }}
-                      />
+                        return <span key={ym} className={cls} title={ym} />;
+                      })}
                     </div>
-                    <span className="k8-lbl">{t.id}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-
+              </motion.div>
+            )}
+          </AnimatePresence>
           {/* Ready Execution Strip */}
           {phase === "ready" && onRun && (
             <div className="theater-cta-box">

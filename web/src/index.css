@@ -4409,13 +4409,6 @@ details.frow[open ] summary.flabel::after {
   letter-spacing: 0.04em;
 }
 
-.hud-signal-deck {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 10px;
-  align-items: stretch;
-}
-
 .mem-carrier-wave {
   fill: none;
   stroke: rgba(233, 227, 214, 0.36);
@@ -4703,12 +4696,6 @@ details.frow[open ] summary.flabel::after {
   flex-shrink: 0;
 }
 
-@media (max-width: 820px) {
-  .hud-signal-deck {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .stencil-stream.live {
     animation: none !important;
@@ -4737,4 +4724,74 @@ details.frow[open ] summary.flabel::after {
   stroke: rgba(233, 227, 214, 0.1);
   stroke-width: 0.5;
   pointer-events: none;
+}
+
+/* STEP 7 — output in place of the month map. The carrier + synth
+   live under the map in one row in every phase (synth left, carrier
+   flexing, Run again at the right when done), so nothing jumps when
+   the run lands. The answer scrolls inside the right pane, capped
+   so the theater keeps the map column's height in every phase. */
+.theater-deck-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.theater-deck-row .k8-synth {
+  flex: 0 0 168px;
+}
+
+.theater-deck-row .mem-scope {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Narrow deck: stack each readout's label over its value. */
+.theater-deck-row .mem-scope-head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.run-again {
+  flex: 0 0 auto;
+  align-self: stretch;
+  padding: 10px 14px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.run-again:hover {
+  background: var(--amber);
+  color: #141210;
+}
+
+.theater-results-wrap {
+  min-width: 0;
+}
+
+.resultscroll-v2.theater-results {
+  max-height: 400px;
+}
+
+@media (max-width: 820px) {
+  .theater-deck-row {
+    flex-wrap: wrap;
+  }
+
+  .theater-deck-row .k8-synth {
+    flex: 1 1 140px;
+  }
 }

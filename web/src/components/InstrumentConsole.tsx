@@ -54,6 +54,7 @@ interface Props {
   status: string;
   payload: SpecJobPayload | null;
   onRun: () => void;
+  onRunAgain: () => void;
 }
 
 /**
@@ -89,6 +90,7 @@ export default function InstrumentConsole({
   status,
   payload,
   onRun,
+  onRunAgain,
 }: Props) {
   const resultsStageRef = useRef<HTMLDivElement>(null);
   const wasRunningRef = useRef(false);
@@ -476,14 +478,16 @@ export default function InstrumentConsole({
               payload={running ? null : payload}
               choreography={choreography}
               onRun={running || payload ? undefined : onRun}
+              results={
+                payload && !running ? (
+                  <div className="resultscroll-v2 theater-results">
+                    <SpecResults payload={payload} catalogue={catalogue} />
+                  </div>
+                ) : null
+              }
+              onRunAgain={payload && !running ? onRunAgain : undefined}
             />
           </div>
-
-          {payload && !running && (
-            <div className="resultscroll-v2">
-              <SpecResults payload={payload} catalogue={catalogue} />
-            </div>
-          )}
         </div>
       </div>
     </div>
