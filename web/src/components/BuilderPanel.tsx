@@ -353,7 +353,7 @@ export default function BuilderPanel({
             if (p?.spec) onChange(draftFromSpec(p.spec));
           }}
         >
-          <option value="">Choose a preset template…</option>
+          <option value="">Choose a preset…</option>
           {presets
             .filter((p) => p.kind === "spec")
             .map((p) => (
@@ -388,13 +388,11 @@ export default function BuilderPanel({
             >
           {activePetal === "measures" && (
             <div className="petal-bay-grid petal-bay-measures" role="region" aria-label="Measures">
-              {/* Step 21: Percentiles is back in column 3, under Time &
-                  Speed. The step-19 separate row is what left the third
-                  column empty — two toggles in a 310px-tall bay — so
-                  the row goes. The cramped label that motivated step 19
-                  is fixed in CSS instead: the note now drops below the
-                  label in a narrow column. Any group outside the four
-                  known ones lands in column 3 too. */}
+              {/* Step 22: back to the step-19/20 layout, per his word —
+                  Percentiles as its own row below the three columns.
+                  Step 21's revert was my call, not his, and he wants it
+                  back. Any group outside the four known ones lands in
+                  column 3. */}
               <div className="bmeasure-col">
                 {renderMeasureGroup(
                   measureGroups.find((g) => g.id === "volume"),
@@ -409,9 +407,6 @@ export default function BuilderPanel({
                 {renderMeasureGroup(
                   measureGroups.find((g) => g.id === "speed"),
                 )}
-                {renderMeasureGroup(
-                  measureGroups.find((g) => g.id === "percentiles"),
-                )}
                 {measureGroups
                   .filter(
                     (g) =>
@@ -420,6 +415,11 @@ export default function BuilderPanel({
                       ),
                   )
                   .map((g) => renderMeasureGroup(g))}
+              </div>
+              <div className="bpercentile-row">
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "percentiles"),
+                )}
               </div>
               {hasPercentile && (
                 <p className="bbay-foot">

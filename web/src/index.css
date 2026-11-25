@@ -2222,12 +2222,14 @@ details.frow[open ] summary.flabel::after {
 
 .breset {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--bone-dim);
   border: 1px solid var(--line);
-  padding: 5px 10px;
+  /* Step 22: a touch tighter (was 10.5px, 5px 10px) — the Reset
+     button was part of the too-lengthy toolbar. */
+  padding: 5px 8px;
   white-space: nowrap;
   transition: border-color 0.14s ease, color 0.14s ease;
 }
@@ -4889,25 +4891,40 @@ button:disabled {
 }
 
 /* Step 16: the measures bay is three columns — Volume & Distance |
-   Revenue & Tips | Time & Speed + Exact Percentiles — with full-width
-   toggle rows in each column, like the preset panel's rows. This comes
-   after .petal-bay-grid so it overrides the flex column. The two
-   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap.
+   Revenue & Tips | Time & Speed — with full-width toggle rows in each
+   column, like the preset panel's rows. This comes after
+   .petal-bay-grid so it overrides the flex column. The two groups
+   stacked in column 3 keep the .bgroup + .bgroup 16px gap.
    Step 18: the columns are content-sized instead of equal fractions —
    the longest label only needs ~135px, so equal 208px columns left
    ~70px of dead space in every row.
    Step 19: Percentiles left column 3 for its own row below, and the
    columns went pure max-content (bay 524 to 464px, summary 300 to
    330px, core 860 to 830px).
-   Step 21: the separate row is reverted — it left the third column
-   with two toggles in a 310px-tall bay, which is the empty space on
-   the right. Percentiles is back under Time & Speed, so the bay is
-   ~245px tall again and every column is full. */
+   Step 21: the row was reverted (Percentiles back in column 3) — that
+   revert was my call, not his.
+   Step 22: back to the step-19/20 row layout per his word. The grid
+   also spreads its columns across the bay (space-between) so the
+   tracks end flush with the bay's right edge instead of leaving slack
+   there. */
 .petal-bay-measures {
   display: grid;
   grid-template-columns: repeat(3, max-content);
   gap: 16px;
   align-items: start;
+  justify-content: space-between;
+}
+
+.petal-bay-measures .bpercentile-row {
+  grid-column: 1 / -1;
+}
+
+.petal-bay-measures .bpercentile-row .btoggle-grid {
+  /* Step 20: qualified with .petal-bay-measures — the step-16
+     .petal-bay-measures .btoggle-grid rule (1fr) sits later in the
+     file at the same specificity and was winning, so the three
+     percentiles stacked as full-width rows instead of one row. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .bmeasure-col {
