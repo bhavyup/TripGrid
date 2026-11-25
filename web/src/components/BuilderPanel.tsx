@@ -388,12 +388,13 @@ export default function BuilderPanel({
             >
           {activePetal === "measures" && (
             <div className="petal-bay-grid petal-bay-measures" role="region" aria-label="Measures">
-              {/* Step 19: three columns — Volume & Distance | Revenue &
-                  Tips | Time & Speed — with full-width toggle rows in
-                  each, like the preset panel's rows. Exact Percentiles
-                  moved out of column 3 into its own row below (it was
-                  cramped there, its label wrapping to two lines). Any
-                  group outside the four known ones lands in column 3. */}
+              {/* Step 21: Percentiles is back in column 3, under Time &
+                  Speed. The step-19 separate row is what left the third
+                  column empty — two toggles in a 310px-tall bay — so
+                  the row goes. The cramped label that motivated step 19
+                  is fixed in CSS instead: the note now drops below the
+                  label in a narrow column. Any group outside the four
+                  known ones lands in column 3 too. */}
               <div className="bmeasure-col">
                 {renderMeasureGroup(
                   measureGroups.find((g) => g.id === "volume"),
@@ -408,6 +409,9 @@ export default function BuilderPanel({
                 {renderMeasureGroup(
                   measureGroups.find((g) => g.id === "speed"),
                 )}
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "percentiles"),
+                )}
                 {measureGroups
                   .filter(
                     (g) =>
@@ -416,11 +420,6 @@ export default function BuilderPanel({
                       ),
                   )
                   .map((g) => renderMeasureGroup(g))}
-              </div>
-              <div className="bpercentile-row">
-                {renderMeasureGroup(
-                  measureGroups.find((g) => g.id === "percentiles"),
-                )}
               </div>
               {hasPercentile && (
                 <p className="bbay-foot">

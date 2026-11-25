@@ -2371,6 +2371,10 @@ details.frow[open ] summary.flabel::after {
   text-transform: uppercase;
   color: var(--bone-faint);
   margin-bottom: 8px;
+  /* Step 21: wrap — in a narrow column (Percentiles, ~133px) the
+     "≤ 128 groups" note drops below the label instead of squeezing
+     the label itself onto two lines. */
+  flex-wrap: wrap;
 }
 
 .bgroup-note {
@@ -4885,35 +4889,25 @@ button:disabled {
 }
 
 /* Step 16: the measures bay is three columns — Volume & Distance |
-   Revenue & Tips | Time & Speed — with full-width toggle rows in each
-   column, like the preset panel's rows. This comes after
-   .petal-bay-grid so it overrides the flex column. The two groups
-   stacked in column 3 keep the .bgroup + .bgroup 16px gap.
-   Step 18: the columns are content-sized (min 150px) instead of equal
-   fractions — the longest label only needs ~135px, so equal 208px
-   columns left ~70px of dead space in every row.
-   Step 19: Exact Percentiles left column 3 for its own full-width row
-   below, and the columns dropped the 150px floor for pure max-content
-   — the grid shrinks to what the labels need (~424px, was 482px).
-   That freed ~58px: half widens the summary (300 to 330px), half
-   comes off the core (860 to 830px). */
+   Revenue & Tips | Time & Speed + Exact Percentiles — with full-width
+   toggle rows in each column, like the preset panel's rows. This comes
+   after .petal-bay-grid so it overrides the flex column. The two
+   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap.
+   Step 18: the columns are content-sized instead of equal fractions —
+   the longest label only needs ~135px, so equal 208px columns left
+   ~70px of dead space in every row.
+   Step 19: Percentiles left column 3 for its own row below, and the
+   columns went pure max-content (bay 524 to 464px, summary 300 to
+   330px, core 860 to 830px).
+   Step 21: the separate row is reverted — it left the third column
+   with two toggles in a 310px-tall bay, which is the empty space on
+   the right. Percentiles is back under Time & Speed, so the bay is
+   ~245px tall again and every column is full. */
 .petal-bay-measures {
   display: grid;
   grid-template-columns: repeat(3, max-content);
   gap: 16px;
   align-items: start;
-}
-
-.petal-bay-measures .bpercentile-row {
-  grid-column: 1 / -1;
-}
-
-.petal-bay-measures .bpercentile-row .btoggle-grid {
-  /* Step 20: qualified with .petal-bay-measures — the step-16
-     .petal-bay-measures .btoggle-grid rule (1fr) sits later in the
-     file at the same specificity and was winning, so the three
-     percentiles stacked as full-width rows instead of one row. */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .bmeasure-col {
