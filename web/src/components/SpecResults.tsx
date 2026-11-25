@@ -127,8 +127,9 @@ interface Props {
  * The rows are self-describing; the catalogue supplies each
  * measure's label and unit. Every row is a ranked bar row: the
  * first measure drives the bar and the big value, the rest ride
- * along as sub-lines beneath it. No header anywhere — the table
- * variant is gone, so a two-measure answer looks like a
+ * along as sub-lines beneath it. A header row names the three
+ * columns — rank, group, big number — for every answer alike.
+ * The table variant is gone, so a two-measure answer looks like a
  * one-measure answer with one more line. The junk audit keeps its
  * four verdict lines. At most 150 rows mount: a runaway answer
  * (Q1 returns 30,379 rows) used to mount 30k DOM nodes and every
@@ -144,11 +145,18 @@ export default function SpecResults({ payload, catalogue }: Props) {
   );
   const measureMeta = (id: string) =>
     catalogue?.measures.find((m) => m.id === id) ?? { label: id, unit: "plain" };
+  const dimMeta = (id: string) =>
+    catalogue?.dimensions.find((d) => d.id === id) ?? { label: id };
 
   if (result.kind === "audit") {
     const max = Math.max(...rows.map((r) => num(r, "trips") ?? 0), 1);
     return (
       <div>
+        <div className="zhead" aria-hidden="true">
+          <span>#</span>
+          <span>Check</span>
+          <span>Trips</span>
+        </div>
         {rows.map((r, idx) => (
           <div className="zrow" key={String(r.part ?? idx)}>
             <div className="rk">{String(idx + 1).padStart(2, "0")}</div>
@@ -195,8 +203,15 @@ export default function SpecResults({ payload, catalogue }: Props) {
   // once, and the rest of the answer is in Export CSV.
   const ROW_CAP = 150;
   const shown = rows.slice(0, ROW_CAP);
+  const headGroup =
+    dims.map((d) => dimMeta(d).label).join(" · ") || "Group";
   return (
     <div>
+      <div className="zhead" aria-hidden="true">
+        <span>#</span>
+        <span>{headGroup}</span>
+        <span>{measureMeta(first).label}</span>
+      </div>
       {shown.map((r, i) => {
         const { main, sub } = rowLabel(r, dims, payments);
         const v = num(r, first);

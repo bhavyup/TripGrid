@@ -16,6 +16,7 @@ import BuilderPanel, {
 import RangeGrid from "./RangeGrid";
 import SpecResults from "./SpecResults";
 import EngineTheater from "./EngineTheater";
+import RadialDial from "./RadialDial";
 import {
   formatCompactNumber,
   resolveEffectiveRange,
@@ -25,7 +26,6 @@ import {
 } from "../utils/instrument";
 import { useAnimatedNumber } from "../utils/motion";
 import {
-  BUILDER_PETALS,
   computeChoreographyFrame,
   type BuilderPetalId,
   type ChoreographyFrame,
@@ -289,6 +289,16 @@ export default function InstrumentConsole({
     return computeChoreographyFrame(p * 2400, 2400);
   }, [running, filesDone, filesTotal]);
 
+  // The wheel's progress arc follows the same real scan progress as the
+  // choreography (and the same 0.14 rest value when the file count is
+  // not known yet). When the run lands it reads 1, so the arc closes.
+  const dialProgress = running
+    ? (choreography?.progress ??
+      (filesTotal > 0 ? filesDone / filesTotal : 0.14))
+    : payload
+      ? 1
+      : 0;
+
   const activeTitle =
     mode === "presets" && activePreset ? activePreset.title : "Custom query recipe";
 
@@ -402,38 +412,22 @@ export default function InstrumentConsole({
             running={running}
           />
         ) : catalogue ? (
-          <>
-            <div
-              className={`petal-rail${running ? " locked" : ""}`}
+          <div
+            className={`dial-wrap${running ? " locked" : ""}`}
               inert={running}
-              role="tablist"
-              aria-label="Query builder sections"
             >
-              {BUILDER_PETALS.map((petal) => {
-                const selected = petal.id === activePetal;
-                return (
-                  <button
-                    key={petal.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    className={`petal-cell${selected ? " active" : ""}`}
-                    onClick={() => setActivePetal(petal.id)}
-                  >
-                    <span className="petal-kicker">
-                      <span className="amber">{petal.code}</span>
-                      <span className="sep" aria-hidden="true">
-                        ·
-                      </span>
-                      <span>{petal.title}</span>
-                    </span>
-                    <span className="petal-summary">
-                      {builderSummaries[petal.id]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+              <RadialDial
+                mode="builder"
+                presets={presets}
+                presetId={presetId}
+                onSelectPreset={onSelectPreset}
+                activePetal={activePetal}
+                onSelectPetal={setActivePetal}
+                builderSummaries={builderSummaries}
+                running={running}
+                progress={dialProgress}
+                hudAct={choreography?.act}
+              >
             <BuilderPanel
               catalogue={catalogue}
               zones={zones}
@@ -457,7 +451,8 @@ export default function InstrumentConsole({
                 />
               }
             />
-          </>
+              </RadialDial>
+          </div>
         ) : (
           <div className="inst-loading">
             <span className="mono">Loading Query Builder catalogue…</span>
