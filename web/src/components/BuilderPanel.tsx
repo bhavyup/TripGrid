@@ -185,17 +185,19 @@ export default function BuilderPanel({
   const [schedSubTab, setSchedSubTab] = useState<"clock" | "bounds">("clock");
   const reduceMotion = useReducedMotion();
 
-  // Step 27 — the Geography mode switch. "Boroughs & Airports /
-  // Specific Taxi Zones" in Fraunces italic 300, centred, with a large
-  // amber "/" between them. Switching tabs runs a wave: the amber
-  // drains out of the old option letter by letter, farthest from the
-  // "/" first, then flows into the new option from the "/" outward.
-  // Each letter is a span with its own transition-delay; the delay is
-  // the letter's distance from the "/" (in letters) times STEP, offset
-  // by the drain time for the entering option so the two waves run in
-  // sequence, not at once.
-  const GEO_SWITCH_STEP = 26; // ms per letter
-  const GEO_SWITCH_DUR = 320; // ms — keep in step with the CSS transition
+  // Step 27 — the Geography mode switch. "BOROUGHS & AIRPORTS /
+  // SPECIFIC TAXI ZONES" in IBM Plex Mono caps (the straight,
+  // robotic, single-stroke face), centred, with a large amber "/"
+  // between them. Switching tabs runs a wave: the amber drains out of
+  // the old option letter by letter, farthest from the "/" first,
+  // then flows into the new option from the "/" outward. Each letter
+  // is a span with its own transition-delay; the delay is the letter's
+  // distance from the "/" (in letters) times STEP, offset by the drain
+  // time for the entering option so the two waves run in sequence, not
+  // at once. Speed: STEP 12ms + DUR 180ms ≈ 0.8s end to end (the first
+  // pass at 26ms / 320ms ≈ 1.6s was too slow).
+  const GEO_SWITCH_STEP = 12; // ms per letter
+  const GEO_SWITCH_DUR = 180; // ms — keep in step with the CSS transition
   const GEO_SWITCH_TEXTS = {
     boroughs: "Boroughs & Airports",
     zones: "Specific Taxi Zones",
