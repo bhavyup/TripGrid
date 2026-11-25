@@ -4969,8 +4969,31 @@ button:disabled {
   /* Step 23: row — Limit and Order sit side by side, Limit left and
      Order right. The .boutput rule sets flex-direction: column; this
      comes later at the same specificity, so row wins here. The two
-     rows need ~400px together and the bay gives ~464px, so they fit. */
+     rows need ~400px together and the bay gives ~464px, so they fit.
+     Step 24: the Order label moves to the right of its selector —
+     the two labels anchor the outer edges (LIMIT on the far left,
+     ORDER on the far right) with the selectors between them. */
   flex-direction: row;
+}
+
+.petal-output-bar .boutput-row:last-child {
+  grid-template-columns: minmax(0, 1fr) 50px;
+}
+
+.petal-output-bar .boutput-row:last-child .bseg {
+  grid-column: 1;
+  /* Step 24b: grid-row 1 is load-bearing. Without it, the sparse
+     auto-placement cursor advances past column 1 when it places the
+     label (first in the DOM) into column 2, and the seg — which needs
+     column 1 — drops to a second row. The label sat on its own line
+     above the selector until this was set. */
+  grid-row: 1;
+}
+
+.petal-output-bar .boutput-row:last-child .bgroup-label-inline {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: right;
 }
 
 .petal-sub-bar {
