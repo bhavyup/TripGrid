@@ -39,7 +39,10 @@ interface Props {
   running: boolean;
   progress: number;
   hudAct?: HudAct;
-  children: React.ReactNode;
+  // STEP 12: children optional — the builder is commented out for now and
+  // the dial renders coreless (tracks only). Restore the BuilderPanel and
+  // this stays valid either way.
+  children?: React.ReactNode;
 }
 
 /**

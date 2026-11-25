@@ -428,6 +428,9 @@ export default function InstrumentConsole({
                 progress={dialProgress}
                 hudAct={choreography?.act}
               >
+                {/* STEP 12: builder commented out for now — tracks only.
+                    Restore by uncommenting the BuilderPanel block below. */}
+                {/*
             <BuilderPanel
               catalogue={catalogue}
               zones={zones}
@@ -451,6 +454,7 @@ export default function InstrumentConsole({
                 />
               }
             />
+                */}
               </RadialDial>
           </div>
         ) : (

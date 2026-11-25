@@ -5288,3 +5288,16 @@ button:disabled {
     animation: none !important;
   }
 }
+
+/* STEP 12 — builder commented out for now, tracks only.
+   The empty core must not render as a box, and the frame must stay tall
+   enough for the full 480px track SVG (it would otherwise shrink to the
+   shell's 170px padding and clip the arcs). Both rules are inert once the
+   BuilderPanel is uncommented (normal frame is ~886px tall). */
+.hud-core:empty {
+  display: none;
+}
+
+.orbital-frame {
+  min-height: 480px;
+}
