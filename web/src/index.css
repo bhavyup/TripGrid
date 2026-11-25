@@ -2362,6 +2362,16 @@ details.frow[open ] summary.flabel::after {
   margin-top: 16px;
 }
 
+/* Step 26: the 16px gap above is for groups stacked vertically in a
+   column. It also hit the groups sitting side by side in the Group
+   By and Geography grids, pushing every column after the first 16px
+   down — Time sat 16px above Location/Trip, Pickup 16px above
+   Drop-off. Reset it where the groups are grid siblings. */
+.petal-dims-cols > .bgroup + .bgroup,
+.petal-two-col > .bgroup + .bgroup {
+  margin-top: 0;
+}
+
 .bgroup-label {
   display: flex;
   align-items: baseline;
@@ -4917,6 +4927,11 @@ button:disabled {
 
 .petal-bay-measures .bpercentile-row {
   grid-column: 1 / -1;
+  /* Step 26: divider above Exact Percentiles, like the Group By bay
+     has above its Limit/Order bar and the Geography bay above its
+     airport row. The grid's 16px row gap is the space above the line. */
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
 }
 
 .petal-bay-measures .bpercentile-row .btoggle-grid {
