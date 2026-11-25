@@ -42,13 +42,6 @@ interface Props {
   children: React.ReactNode;
 }
 
-const ACT_LABELS: Record<HudAct, { code: string; name: string }> = {
-  mechanical: { code: "ACT I", name: "MECHANICAL LOCK" },
-  analog: { code: "ACT II", name: "ANALOG TRACE" },
-  digital: { code: "ACT III", name: "DIGITAL SYNTHESIS" },
-  locked: { code: "READY", name: "CORE ARMED" },
-};
-
 /**
  * 208° Orbital FUI Command Wheel framing the Central Execution Core (`hud-core`).
  * Replaces linear dashboards with concentric counter-rotating vernier rings,
@@ -87,11 +80,16 @@ export default function RadialDial({
 
   const isCompact = width < 1040;
   // Orbital halo geometry embracing `.hud-core` across -194° .. +14°
-  const rx = Math.max(320, Math.min(550, width * 0.432));
-  const ry = 204;
+  // Step 11: the arcs run wider — the tracks push further out toward
+  // the console edges (rx up, ry up, the centre dropped to keep the
+  // crown of the arc inside the frame). The petals, the lock wedge,
+  // the ticks and the progress arc all ride these numbers, so they
+  // move out with the tracks.
+  const rx = Math.max(360, Math.min(620, width * 0.46));
+  const ry = 250;
   const cx = width / 2;
-  const cy = 256;
-  const svgHeight = 416;
+  const cy = 310;
+  const svgHeight = 480;
 
   const presetNodes = useMemo(
     () => computeArcNodes(presets.length, rx, ry, -194, 14),
@@ -229,12 +227,6 @@ export default function RadialDial({
   const rayOuterY = cy + ry * 0.89 * Math.sin(rayRad);
   const rayInnerX = cx + rx * 0.835 * Math.cos(rayRad);
   const rayInnerY = cy + ry * 0.835 * Math.sin(rayRad);
-
-  const actDisplay = running
-    ? ACT_LABELS[hudAct]
-    : progress >= 1
-      ? { code: "LOCKED", name: "RESULTS VERIFIED" }
-      : ACT_LABELS.locked;
 
   return (
     <div
@@ -410,42 +402,10 @@ export default function RadialDial({
             })}
           </div>
 
-          {/* Upper HUD Crown Bridge (connects orbital crown cleanly to the Central Core) */}
-          <div className="orb-crown-bridge">
-            <button
-              type="button"
-              className="dial-step-btn"
-              aria-label="Previous dial item"
-              onClick={() => stepSelection(-1)}
-            >
-              ‹
-            </button>
-            <div className="orb-crown-center">
-              <div className="orb-crown-meta">
-                <span className="dial-collar-kicker">
-                  {mode === "presets"
-                    ? `SECTOR ${String(activePresetIdx + 1).padStart(2, "0")} / ${String(presets.length || 11).padStart(2, "0")}`
-                    : `BAY ${BUILDER_PETALS[activeBuilderIdx]?.code ?? "01"} · COMPOSER`}
-                </span>
-                <span className="orb-crown-sep" aria-hidden="true">·</span>
-                <span className="dial-collar-deg mono">
-                  AZ {Math.round(orbitalAngle + 194)}°
-                </span>
-              </div>
-              <div className={`orb-phase-pill${running ? " live" : ""}`}>
-                <span className="amber">{actDisplay.code}</span>
-                <span>{actDisplay.name}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="dial-step-btn"
-              aria-label="Next dial item"
-              onClick={() => stepSelection(1)}
-            >
-              ›
-            </button>
-          </div>
+          {/* Step 11: the crown bridge (bay / azimuth / phase pill with
+              the step buttons) is out for now — the arch stays open so
+              the space beneath it, between the radial tracks, reads
+              clean. The CSS stays; restoring this block brings it back. */}
 
           {/* Central HUD Core embraced directly inside the orbital arch */}
           <div className="hud-core-shell">
@@ -461,8 +421,6 @@ export default function RadialDial({
                 {mode === "presets"
                   ? `SECTOR ${String(activePresetIdx + 1).padStart(2, "0")} / ${presets.length || 11}`
                   : `BUILDER · ${BUILDER_PETALS[activeBuilderIdx]?.title}`}
-                {" · "}
-                <span className="amber">{actDisplay.name}</span>
               </span>
               <div className="dial-compact-nav">
                 <button
