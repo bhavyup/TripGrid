@@ -2138,7 +2138,9 @@ details.frow[open ] summary.flabel::after {
 }
 
 .bsummary {
-  flex: 0 0 300px;
+  /* Step 19: 300 to 330px — half the width freed by the Percentiles
+     move (see .petal-bay-measures). */
+  flex: 0 0 330px;
   border-left: 1px solid var(--line);
 }
 
@@ -2491,14 +2493,16 @@ details.frow[open ] summary.flabel::after {
   /* Step 18: basis auto (not 0) so the five buttons size to their
      labels when there is room, and shrink with an ellipsis when the
      bay narrows — the old flex: 1 forced equal widths and overflowed
-     the 253px geography column by 15px. Padding 6px 4px (was 6px). */
+     the 253px geography column by 15px.
+     Step 19: a touch tighter still (10px, 5px 3px) so the airport
+     control fits the narrower main column the 830px core leaves. */
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 6px 4px;
+  padding: 5px 3px;
+  font-size: 10px;
   font-family: var(--mono);
-  font-size: 10.5px;
   color: var(--bone-dim);
   white-space: nowrap;
   transition: background 0.12s ease, color 0.12s ease;
@@ -4873,18 +4877,31 @@ button:disabled {
 }
 
 /* Step 16: the measures bay is three columns — Volume & Distance |
-   Revenue & Tips | Time & Speed + Exact Percentiles — with full-width
-   toggle rows in each column, like the preset panel's rows. This comes
-   after .petal-bay-grid so it overrides the flex column. The two
-   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap.
+   Revenue & Tips | Time & Speed — with full-width toggle rows in each
+   column, like the preset panel's rows. This comes after
+   .petal-bay-grid so it overrides the flex column. The two groups
+   stacked in column 3 keep the .bgroup + .bgroup 16px gap.
    Step 18: the columns are content-sized (min 150px) instead of equal
    fractions — the longest label only needs ~135px, so equal 208px
-   columns left ~70px of dead space in every row. */
+   columns left ~70px of dead space in every row.
+   Step 19: Exact Percentiles left column 3 for its own full-width row
+   below, and the columns dropped the 150px floor for pure max-content
+   — the grid shrinks to what the labels need (~424px, was 482px).
+   That freed ~58px: half widens the summary (300 to 330px), half
+   comes off the core (860 to 830px). */
 .petal-bay-measures {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, max-content));
+  grid-template-columns: repeat(3, max-content);
   gap: 16px;
   align-items: start;
+}
+
+.petal-bay-measures .bpercentile-row {
+  grid-column: 1 / -1;
+}
+
+.bpercentile-row .btoggle-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .bmeasure-col {
@@ -5406,8 +5423,10 @@ button:disabled {
   /* Step 17: widened for the two-column builder (builder + 300px
      summary). Was min(780px, calc(100% - 410px)).
      Step 18: back down to 860px — the builder only needs ~560px now
-     that the toggles are content-sized, so the core shrinks with it. */
-  width: min(860px, calc(100% - 360px));
+     that the toggles are content-sized, so the core shrinks with it.
+     Step 19: 860 to 830px — the other half of the width freed by the
+     Percentiles move. */
+  width: min(830px, calc(100% - 360px));
   border: 1px solid var(--line);
   background: rgba(23, 21, 18, 0.96);
   position: relative;
