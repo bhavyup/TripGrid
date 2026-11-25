@@ -5053,6 +5053,81 @@ button:disabled {
   flex: 1 1 0;
 }
 
+/* Step 27: the Geography mode switch — "Boroughs & Airports /
+   Specific Taxi Zones" in Fraunces italic 300, centred, with a large
+   amber "/" between them. The "/" stays amber; the selected option is
+   amber, the other is dim. Switching tabs runs a wave: the amber
+   drains out of the old option letter by letter, farthest from the
+   "/" first, then flows into the new option from the "/" outward.
+   Each letter is a span with its own transition-delay (set inline);
+   the CSS transition is the colour fade (0.32s — keep GEO_SWITCH_DUR
+   in BuilderPanel.tsx in step with it). */
+.petal-bay-geo .petal-sub-bar {
+  justify-content: center;
+}
+
+.geo-switch {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 22px;
+  padding: 4px 0 2px;
+}
+
+.geo-switch button {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.geo-switch button:hover:not(.on) {
+  filter: brightness(1.35);
+}
+
+.geo-switch button:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 4px;
+}
+
+.geo-switch .geo-letter {
+  display: inline-block;
+  color: var(--bone-dim);
+  transition: color 0.32s ease;
+}
+
+.geo-switch button.on .geo-letter {
+  color: var(--amber);
+}
+
+.geo-switch .geo-switch-count {
+  display: inline-block;
+  margin-left: 0.3em;
+  color: var(--bone-dim);
+  transition: color 0.32s ease;
+}
+
+.geo-switch button.on .geo-switch-count {
+  color: var(--amber);
+}
+
+.geo-switch-slash {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 21px;
+  letter-spacing: 0;
+  color: var(--amber);
+}
+
 .petal-bay-range .archive-strip {
   border: 1px solid var(--line);
 }

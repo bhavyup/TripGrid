@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { BuilderPetalId } from "../utils/spring";
 import type {
   BuilderCatalogue,
@@ -184,6 +184,74 @@ export default function BuilderPanel({
   const [geoSubTab, setGeoSubTab] = useState<"boroughs" | "zones">("boroughs");
   const [schedSubTab, setSchedSubTab] = useState<"clock" | "bounds">("clock");
   const reduceMotion = useReducedMotion();
+
+  // Step 27 — the Geography mode switch. "Boroughs & Airports /
+  // Specific Taxi Zones" in Fraunces italic 300, centred, with a large
+  // amber "/" between them. Switching tabs runs a wave: the amber
+  // drains out of the old option letter by letter, farthest from the
+  // "/" first, then flows into the new option from the "/" outward.
+  // Each letter is a span with its own transition-delay; the delay is
+  // the letter's distance from the "/" (in letters) times STEP, offset
+  // by the drain time for the entering option so the two waves run in
+  // sequence, not at once.
+  const GEO_SWITCH_STEP = 26; // ms per letter
+  const GEO_SWITCH_DUR = 320; // ms — keep in step with the CSS transition
+  const GEO_SWITCH_TEXTS = {
+    boroughs: "Boroughs & Airports",
+    zones: "Specific Taxi Zones",
+  } as const;
+  const prevGeoTabRef = useRef<"boroughs" | "zones">(geoSubTab);
+  useEffect(() => {
+    prevGeoTabRef.current = geoSubTab;
+  }, [geoSubTab]);
+  // On the render where the tab just changed, the ref still holds the
+  // old tab, so the outgoing and incoming waves can be told apart.
+  const prevGeoTab = prevGeoTabRef.current;
+  const leavingGeoTab = prevGeoTab !== geoSubTab ? prevGeoTab : null;
+  const geoSwitchDrainMs =
+    leavingGeoTab !== null
+      ? (GEO_SWITCH_TEXTS[leavingGeoTab].length - 1) * GEO_SWITCH_STEP + GEO_SWITCH_DUR
+      : 0;
+
+  function geoSwitchKind(id: "boroughs" | "zones"): "leaving" | "entering" | "steady" {
+    if (leavingGeoTab === null) return "steady";
+    return id === leavingGeoTab ? "leaving" : "entering";
+  }
+
+  // Per-letter transition-delay (ms) for one letter of a switch option.
+  // `side` is which side of the "/" the option sits on; `index` the
+  // letter's position, `len` the option's length.
+  function geoSwitchLetterDelay(
+    side: "left" | "right",
+    kind: "leaving" | "entering" | "steady",
+    index: number,
+    len: number,
+  ): number {
+    if (kind === "steady" || reduceMotion) return 0;
+    // Distance from the "/" in letters: the left option's nearest
+    // letter is its last, the right option's nearest is its first.
+    const dist = side === "left" ? len - 1 - index : index;
+    if (kind === "leaving") {
+      // Farthest changes first, nearest last: delay grows toward the "/".
+      return (len - 1 - dist) * GEO_SWITCH_STEP;
+    }
+    // Entering: nearest changes first, after the drain finishes.
+    return geoSwitchDrainMs + dist * GEO_SWITCH_STEP;
+  }
+
+  function geoSwitchLetters(text: string, id: "boroughs" | "zones") {
+    const side = id === "boroughs" ? "left" : "right";
+    const kind = geoSwitchKind(id);
+    return [...text].map((ch, i) => (
+      <span
+        key={i}
+        className="geo-letter"
+        style={{ transitionDelay: `${geoSwitchLetterDelay(side, kind, i, text.length)}ms` }}
+      >
+        {ch === " " ? " " : ch}
+      </span>
+    ));
+  }
 
   const measureGroups = useMemo(
     () => groupCatalogueMeasures(catalogue.measures),
@@ -517,7 +585,7 @@ export default function BuilderPanel({
           {activePetal === "geography" && (
             <div className="petal-bay-grid petal-bay-geo" role="region" aria-label="Geography filters">
               <div className="petal-sub-bar">
-                <div className="bseg" role="tablist" aria-label="Geography filter mode">
+                <div className="geo-switch" role="tablist" aria-label="Geography filter mode">
                   <button
                     type="button"
                     role="tab"
@@ -525,8 +593,9 @@ export default function BuilderPanel({
                     className={geoSubTab === "boroughs" ? "on" : ""}
                     onClick={() => setGeoSubTab("boroughs")}
                   >
-                    Boroughs &amp; Airports
+                    {geoSwitchLetters(GEO_SWITCH_TEXTS.boroughs, "boroughs")}
                   </button>
+                  <span className="geo-switch-slash" aria-hidden="true">/</span>
                   <button
                     type="button"
                     role="tab"
@@ -534,7 +603,22 @@ export default function BuilderPanel({
                     className={geoSubTab === "zones" ? "on" : ""}
                     onClick={() => setGeoSubTab("zones")}
                   >
-                    Specific Taxi Zones {puZones.length + doZones.length > 0 ? `(${puZones.length + doZones.length})` : ""}
+                    {geoSwitchLetters(GEO_SWITCH_TEXTS.zones, "zones")}
+                    {puZones.length + doZones.length > 0 && (
+                      <span
+                        className="geo-switch-count"
+                        style={{
+                          transitionDelay: `${geoSwitchLetterDelay(
+                            "right",
+                            geoSwitchKind("zones"),
+                            GEO_SWITCH_TEXTS.zones.length - 1,
+                            GEO_SWITCH_TEXTS.zones.length,
+                          )}ms`,
+                        }}
+                      >
+                        ({puZones.length + doZones.length})
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
