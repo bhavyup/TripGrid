@@ -15,7 +15,6 @@ import {
   WEEKDAY_PRESETS,
   countAllActiveFilters,
   countFiltersInTab,
-  describeActiveFilters,
   formatCompactNumber,
   formatHourRanges,
   getFilterTabForDimension,
@@ -168,7 +167,6 @@ export default function BuilderPanel({
   zones,
   presets,
   draft,
-  gate,
   onChange,
   locked,
   activePetal,
@@ -239,10 +237,55 @@ export default function BuilderPanel({
     (m) => catalogue.measures.find((x) => x.id === m)?.percentile,
   );
 
-  const activeFilterTokens = useMemo(
-    () => describeActiveFilters(draft.filters, catalogue, zones),
-    [draft.filters, catalogue, zones],
-  );
+  // Step 16: one measure group (label + its toggle buttons), reused by
+  // the three-column measures bay below.
+  const renderMeasureGroup = (
+    group: ReturnType<typeof groupCatalogueMeasures>[number] | undefined,
+  ) => {
+    if (!group) return null;
+    return (
+      <div className="bgroup" key={group.id}>
+        <div className="bgroup-label">
+          <span>{group.label}</span>
+          {group.id === "percentiles" && (
+            <span className="bgroup-note">
+              ≤ {catalogue.max_pctl_groups} groups
+            </span>
+          )}
+        </div>
+        <div className="btoggle-grid petal-toggles">
+          {group.items.map((m) => {
+            const idx = draft.measures.indexOf(m.id);
+            const on = idx !== -1;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                title={m.label}
+                aria-pressed={on}
+                className={`btoggle${on ? " on" : ""}`}
+                onClick={() =>
+                  onChange({
+                    ...draft,
+                    measures: toggleIn(draft.measures, m.id),
+                  })
+                }
+              >
+                <span className="btoggle-name">
+                  {shortMeasureLabel(m.id, m.label)}
+                </span>
+                {on && draft.measures.length > 1 && idx === 0 && (
+                  <span className="btoggle-rank" title="Primary ranking measure">
+                    1st
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const activeFilterCount = countAllActiveFilters(draft.filters);
   const puZones = arr("pu_zones") as number[];
@@ -329,48 +372,38 @@ export default function BuilderPanel({
             >
           {activePetal === "measures" && (
             <div className="petal-bay-grid petal-bay-measures" role="region" aria-label="Measures">
-              {measureGroups.map((group) => (
-                <div className="bgroup" key={group.id}>
-                  <div className="bgroup-label">
-                    <span>{group.label}</span>
-                    {group.id === "percentiles" && (
-                      <span className="bgroup-note">
-                        ≤ {catalogue.max_pctl_groups} groups
-                      </span>
-                    )}
-                  </div>
-                  <div className="btoggle-grid petal-toggles">
-                    {group.items.map((m) => {
-                      const idx = draft.measures.indexOf(m.id);
-                      const on = idx !== -1;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          title={m.label}
-                          aria-pressed={on}
-                          className={`btoggle${on ? " on" : ""}`}
-                          onClick={() =>
-                            onChange({
-                              ...draft,
-                              measures: toggleIn(draft.measures, m.id),
-                            })
-                          }
-                        >
-                          <span className="btoggle-name">
-                            {shortMeasureLabel(m.id, m.label)}
-                          </span>
-                          {on && draft.measures.length > 1 && idx === 0 && (
-                            <span className="btoggle-rank" title="Primary ranking measure">
-                              1st
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+              {/* Step 16: three columns — Volume & Distance | Revenue &
+                  Tips | Time & Speed + Exact Percentiles — with
+                  full-width toggle rows in each, like the preset
+                  panel's rows. The four stacked groups wasted vertical
+                  space; this is the same content, tighter. Any group
+                  outside the four known ones lands in column 3 too. */}
+              <div className="bmeasure-col">
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "volume"),
+                )}
+              </div>
+              <div className="bmeasure-col">
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "revenue"),
+                )}
+              </div>
+              <div className="bmeasure-col">
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "speed"),
+                )}
+                {renderMeasureGroup(
+                  measureGroups.find((g) => g.id === "percentiles"),
+                )}
+                {measureGroups
+                  .filter(
+                    (g) =>
+                      !["volume", "revenue", "speed", "percentiles"].includes(
+                        g.id,
+                      ),
+                  )
+                  .map((g) => renderMeasureGroup(g))}
+              </div>
               {hasPercentile && (
                 <p className="bbay-foot">
                   Exact fare tables enforce the {catalogue.max_pctl_groups}-group percentile gate.
@@ -1580,61 +1613,10 @@ export default function BuilderPanel({
     )}
 
       {/* Live Query Blueprint Dossier (matches Preset Dossier clarity) */}
-      <div className="bblueprint" aria-label="Query recipe blueprint">
-        <div className="bblue-cell">
-          <span className="bblue-k">Select</span>
-          <span className="bblue-v">
-            {draft.measures.length > 0
-              ? draft.measures
-                  .map(
-                    (id) =>
-                      shortMeasureLabel(
-                        id,
-                        catalogue.measures.find((m) => m.id === id)?.label ?? id,
-                      ),
-                  )
-                  .join(" · ")
-              : "Pick at least one measure"}
-          </span>
-        </div>
-        <div className="bblue-cell">
-          <span className="bblue-k">Group by</span>
-          <span className="bblue-v">
-            {draft.dimensions.length > 0
-              ? draft.dimensions
-                  .map(
-                    (id) =>
-                      shortDimensionLabel(
-                        id,
-                        catalogue.dimensions.find((d) => d.id === id)?.label ??
-                          id,
-                      ),
-                  )
-                  .join(" × ")
-              : "Archive total"}
-            {draft.top_k ? ` · Top ${draft.top_k}` : ""}
-            {` · ${draft.sort === "key" ? "Group order" : "Biggest first"}`}
-          </span>
-        </div>
-        <div className="bblue-cell">
-          <span className="bblue-k">Where</span>
-          <span className="bblue-v">
-            {activeFilterTokens.length > 0
-              ? activeFilterTokens.map((t) => `${t.label}: ${t.value}`).join(" · ")
-              : "All trips in range"}
-          </span>
-        </div>
-        <div className="bblue-cell">
-          <span className="bblue-k">Gate plan</span>
-          <span className={`bblue-v mono${gate && !gate.ok ? " amber" : ""}`}>
-            {gate
-              ? gate.ok && gate.gate
-                ? `${gate.gate.shape} = ${formatCompactNumber(gate.gate.buckets)} / ${formatCompactNumber(gate.gate.budget)}`
-                : "Over budget"
-              : "Pricing…"}
-          </span>
-        </div>
-      </div>
+      {/* Step 16: the blueprint strip (Select / Group by / Where /
+          Gate plan) is gone — the banners already carry what is
+          selected, and the Gate chip in the top bar carries the gate.
+          Its content lived nowhere else in this file. */}
     </div>
   );
 }

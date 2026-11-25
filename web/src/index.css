@@ -4833,6 +4833,32 @@ button:disabled {
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
 }
 
+/* Step 16: the measures bay is three columns — Volume & Distance |
+   Revenue & Tips | Time & Speed + Exact Percentiles — with full-width
+   toggle rows in each column, like the preset panel's rows. This comes
+   after .petal-bay-grid so it overrides the flex column. The two
+   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap. */
+.petal-bay-measures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.bmeasure-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.petal-bay-measures .btoggle-grid {
+  grid-template-columns: 1fr;
+}
+
+.petal-bay-measures .bbay-foot {
+  grid-column: 1 / -1;
+}
+
 .petal-dims-cols {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
