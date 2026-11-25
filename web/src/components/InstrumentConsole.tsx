@@ -437,6 +437,7 @@ export default function InstrumentConsole({
               presets={presets}
               draft={draft}
               gate={gate}
+              effectiveRange={effectiveRange}
               onChange={onDraftChange}
               locked={running}
               activePetal={activePetal}

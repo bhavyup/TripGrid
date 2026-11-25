@@ -15,6 +15,7 @@ import {
   WEEKDAY_PRESETS,
   countAllActiveFilters,
   countFiltersInTab,
+  describeActiveFilters,
   formatCompactNumber,
   formatHourRanges,
   getFilterTabForDimension,
@@ -58,6 +59,8 @@ interface Props {
   presets: PresetInfo[];
   draft: BuilderDraft;
   gate?: ValidateResult | null;
+  /** The months the query will actually run over (from InstrumentConsole). */
+  effectiveRange: [string, string] | null;
   onChange: (draft: BuilderDraft) => void;
   /** A query is running: every toggle in the panel goes inert. */
   locked: boolean;
@@ -167,6 +170,8 @@ export default function BuilderPanel({
   zones,
   presets,
   draft,
+  gate,
+  effectiveRange,
   onChange,
   locked,
   activePetal,
@@ -235,6 +240,13 @@ export default function BuilderPanel({
 
   const hasPercentile = draft.measures.some(
     (m) => catalogue.measures.find((x) => x.id === m)?.percentile,
+  );
+
+  // Step 17: the summary panel's Filters row (re-added after step 16
+  // took it out with the blueprint strip).
+  const activeFilterTokens = useMemo(
+    () => describeActiveFilters(draft.filters, catalogue, zones),
+    [draft.filters, catalogue, zones],
   );
 
   // Step 16: one measure group (label + its toggle buttons), reused by
@@ -324,6 +336,10 @@ export default function BuilderPanel({
       className={`bworkbench${locked ? " locked" : ""}`}
       inert={locked}
     >
+      {/* Step 17: two columns — the builder on the left (whichever
+          dial is selected right now), the recipe summary on the
+          right in the preset dossier's own shape. */}
+      <div className="bworkbench-main">
       {/* Step 15: one toolbar row — the preset dropdown on the left,
           Reset at the right end. The "Seed from preset" label and the
           "N measures · N dims · N filters" summary are gone. */}
@@ -1612,11 +1628,87 @@ export default function BuilderPanel({
       </div>
     )}
 
-      {/* Live Query Blueprint Dossier (matches Preset Dossier clarity) */}
-      {/* Step 16: the blueprint strip (Select / Group by / Where /
-          Gate plan) is gone — the banners already carry what is
-          selected, and the Gate chip in the top bar carries the gate.
-          Its content lived nowhere else in this file. */}
+      </div>
+
+      {/* Step 17: the recipe summary, on the right, in the preset
+          dossier's own shape — kicker, title, ledger rows. It tracks
+          the live draft, so it is the blueprint strip's replacement
+          (step 16 took the strip out; this is where its content went). */}
+      <aside className="preset-dossier bsummary" aria-label="Current recipe summary">
+        <div className="dossier-kicker">
+          <span className="amber">Builder</span>
+          <span className="sep" aria-hidden="true">/</span>
+          <span>Custom recipe</span>
+        </div>
+        <h3 className="dossier-title">Custom query recipe</h3>
+        <div className="dossier-ledger">
+          <div className="drow">
+            <span className="dkey">Measures</span>
+            <span className="dval">
+              {draft.measures.length > 0
+                ? draft.measures
+                    .map(
+                      (id) =>
+                        shortMeasureLabel(
+                          id,
+                          catalogue.measures.find((m) => m.id === id)?.label ?? id,
+                        ),
+                    )
+                    .join(" · ")
+                : "Pick at least one measure"}
+            </span>
+          </div>
+          <div className="drow">
+            <span className="dkey">Group by</span>
+            <span className="dval">
+              {draft.dimensions.length > 0
+                ? draft.dimensions
+                    .map(
+                      (id) =>
+                        shortDimensionLabel(
+                          id,
+                          catalogue.dimensions.find((d) => d.id === id)?.label ??
+                            id,
+                        ),
+                    )
+                    .join(" × ")
+                : "Archive total"}
+              {draft.top_k ? ` · Top ${draft.top_k}` : ""}
+              {` · ${draft.sort === "key" ? "Group order" : "Biggest first"}`}
+            </span>
+          </div>
+          <div className="drow">
+            <span className="dkey">Filters</span>
+            <span className="dval">
+              {activeFilterTokens.length > 0
+                ? activeFilterTokens.map((t) => `${t.label}: ${t.value}`).join(" · ")
+                : "None — all trips in range"}
+            </span>
+          </div>
+          <div className="drow">
+            <span className="dkey">Range</span>
+            <span className="dval">
+              {effectiveRange ? (
+                <span className="amber">
+                  {effectiveRange[0]} → {effectiveRange[1]}
+                </span>
+              ) : (
+                "Whole archive"
+              )}
+            </span>
+          </div>
+          <div className="drow">
+            <span className="dkey">Gate plan</span>
+            <span className="dval mono">
+              {gate
+                ? gate.ok && gate.gate
+                  ? `${gate.gate.shape} = ${gate.gate.buckets.toLocaleString("en-US")} / ${formatCompactNumber(gate.gate.budget)} · ${formatCompactNumber(gate.rows_in_range ?? 0)} rows`
+                  : "Over budget"
+                : "Pricing…"}
+            </span>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }

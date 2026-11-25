@@ -2123,6 +2123,36 @@ details.frow[open ] summary.flabel::after {
 
 .bworkbench {
   background: var(--ground-2);
+  /* Step 17: two columns — the builder on the left, the recipe
+     summary on the right. The main column flexes; the summary
+     holds a fixed 300px, like the dossier column in presets. */
+  display: flex;
+  align-items: stretch;
+}
+
+.bworkbench-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bsummary {
+  flex: 0 0 300px;
+  border-left: 1px solid var(--line);
+}
+
+/* Step 17: below the compact breakpoint the summary stacks under
+   the builder instead of squeezing beside it. */
+@media (max-width: 1039px) {
+  .bworkbench {
+    flex-direction: column;
+  }
+  .bsummary {
+    flex: none;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
 }
 
 .btoolbar {
@@ -5361,7 +5391,9 @@ button:disabled {
 }
 
 .hud-core {
-  width: min(780px, calc(100% - 410px));
+  /* Step 17: widened for the two-column builder (builder + 300px
+     summary). Was min(780px, calc(100% - 410px)). */
+  width: min(1000px, calc(100% - 360px));
   border: 1px solid var(--line);
   background: rgba(23, 21, 18, 0.96);
   position: relative;
