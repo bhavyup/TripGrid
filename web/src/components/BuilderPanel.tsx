@@ -515,7 +515,7 @@ export default function BuilderPanel({
           )}
 
           {activePetal === "geography" && (
-            <div className="petal-bay-grid" role="region" aria-label="Geography filters">
+            <div className="petal-bay-grid petal-bay-geo" role="region" aria-label="Geography filters">
               <div className="petal-sub-bar">
                 <div className="bseg" role="tablist" aria-label="Geography filter mode">
                   <button
@@ -540,6 +540,7 @@ export default function BuilderPanel({
               </div>
 
               {geoSubTab === "boroughs" ? (
+                <>
                 <div className="petal-two-col">
                   <div className="bgroup">
                     <div className="bgroup-label">
@@ -598,44 +599,47 @@ export default function BuilderPanel({
                         </button>
                       ))}
                     </div>
-                    <div
-                      className="bseg"
-                      role="group"
-                      aria-label="Airport pickups"
-                      style={{
-                        marginTop: 12,
-                        paddingTop: 10,
-                        borderTop: "1px solid var(--line-soft)",
-                      }}
-                    >
-                      {(
-                        [
-                          ["off", "Any trip"],
-                          ["any", "All airports"],
-                          ...(airportIds.jfk != null
-                            ? [[String(airportIds.jfk), "JFK"] as [string, string]]
-                            : []),
-                          ...(airportIds.lga != null
-                            ? [[String(airportIds.lga), "LGA"] as [string, string]]
-                            : []),
-                          ...(airportIds.ewr != null
-                            ? [[String(airportIds.ewr), "EWR"] as [string, string]]
-                            : []),
-                        ] as [string, string][]
-                      ).map(([m, label]) => (
-                        <button
-                          key={m}
-                          type="button"
-                          aria-pressed={airportMode === m}
-                          className={airportMode === m ? "on" : ""}
-                          onClick={() => setAirport(m)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
+                {/* Step 25: the airport selector is its own full-width
+                    row below the two borough columns, with the same
+                    divider above it as the Group By bay has above its
+                    Limit/Order bar. It used to live inside the drop-off
+                    column, squeezed to that column's width. */}
+                <div className="bgeo-airport">
+                  <div
+                    className="bseg bseg-airport"
+                    role="group"
+                    aria-label="Airport pickups"
+                  >
+                    {(
+                      [
+                        ["off", "Any trip"],
+                        ["any", "All airports"],
+                        ...(airportIds.jfk != null
+                          ? [[String(airportIds.jfk), "JFK"] as [string, string]]
+                          : []),
+                        ...(airportIds.lga != null
+                          ? [[String(airportIds.lga), "LGA"] as [string, string]]
+                          : []),
+                        ...(airportIds.ewr != null
+                          ? [[String(airportIds.ewr), "EWR"] as [string, string]]
+                          : []),
+                      ] as [string, string][]
+                    ).map(([m, label]) => (
+                      <button
+                        key={m}
+                        type="button"
+                        aria-pressed={airportMode === m}
+                        className={airportMode === m ? "on" : ""}
+                        onClick={() => setAirport(m)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                </>
               ) : (
                 <div className="fpane fpane-zones">
                   <div className="bseg zone-dir-seg" role="tablist" aria-label="Zone direction">

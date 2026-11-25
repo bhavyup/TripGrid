@@ -5009,6 +5009,35 @@ button:disabled {
   gap: 18px;
 }
 
+/* Step 25: the Geography bay keeps its two outer columns, but each
+   column's borough chips go two per row instead of three — three
+   across squeezed "Staten Island" onto two lines. Two across gives
+   each chip ~110px, so every borough name fits on one line. */
+.petal-bay-geo .bchip-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Step 25: the airport selector is its own full-width row below the
+   two borough columns, with the same divider above it as the Group
+   By bay has above its Limit/Order bar (border-top + padding-top).
+   The five buttons spread evenly across the full row. */
+.bgeo-airport {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.bgeo-airport .bseg {
+  width: 100%;
+}
+
+.bgeo-airport .bseg button {
+  /* Equal widths, so the five spread evenly across the full row.
+     The base .bseg button is flex: 1 1 auto (content-sized); this
+     is scoped to the airport row only. */
+  flex: 1 1 0;
+}
+
 .petal-bay-range .archive-strip {
   border: 1px solid var(--line);
 }
