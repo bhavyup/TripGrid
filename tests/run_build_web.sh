@@ -14,11 +14,20 @@ fi
 export PATH=~/opt/node/bin:$PATH
 node -v; npm -v
 # Build on the Linux filesystem (drvfs symlinks/permissions fight npm).
-rm -rf ~/tripgrid-web
-mkdir -p ~/tripgrid-web
+# NOTE (25 Nov 2026): the build MUST use its own directory, NOT
+# ~/tripgrid-web. The dev server (tests/run_dev.sh) serves from
+# ~/tripgrid-web — the old `rm -rf ~/tripgrid-web` here deleted the
+# folder Vite was watching, Vite's restart then failed with the config
+# gone, and the server came back half-dead: static files served, but
+# the /api proxy dead, so the page showed dashes forever. Builds broke
+# the dev server every single time; hot reload itself was never the
+# problem. Keep the two directories separate.
+BUILD_DIR=~/tripgrid-build
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
 cd /mnt/d/codes/tripgrid/web
-tar --exclude=node_modules --exclude=dist -cf - . | tar -xf - -C ~/tripgrid-web
-cd ~/tripgrid-web
+tar --exclude=node_modules --exclude=dist -cf - . | tar -xf - -C "$BUILD_DIR"
+cd "$BUILD_DIR"
 npm install --no-audit --no-fund 2>&1 | tail -2
 npm run build 2>&1 | tail -8
 rm -rf /mnt/d/codes/tripgrid/web/dist
