@@ -2165,13 +2165,18 @@ details.frow[open ] summary.flabel::after {
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--ground);
-  flex-wrap: wrap;
+  /* Step 20: nowrap — at the 830px core the select's longest option
+     pushed Reset onto a second row, leaving the top row's right side
+     empty. The select now shrinks instead of wrapping. */
+  flex-wrap: nowrap;
 }
 
 .btoolbar-left {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .btoolbar-label {
@@ -2190,7 +2195,10 @@ details.frow[open ] summary.flabel::after {
   font-family: var(--mono);
   font-size: 12px;
   padding: 6px 10px;
-  min-width: 240px;
+  /* Step 20: min-width 0 (was 240px) so the select shrinks to the
+     space Reset leaves, instead of forcing the toolbar to wrap. */
+  min-width: 0;
+  flex: 1 1 auto;
   cursor: pointer;
 }
 
@@ -4900,7 +4908,11 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.bpercentile-row .btoggle-grid {
+.petal-bay-measures .bpercentile-row .btoggle-grid {
+  /* Step 20: qualified with .petal-bay-measures — the step-16
+     .petal-bay-measures .btoggle-grid rule (1fr) sits later in the
+     file at the same specificity and was winning, so the three
+     percentiles stacked as full-width rows instead of one row. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
