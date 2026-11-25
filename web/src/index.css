@@ -2372,13 +2372,13 @@ details.frow[open ] summary.flabel::after {
 .btoggle-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: 4px;
 }
 
 .bchip-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  gap: 4px;
 }
 
 .btoggle {
@@ -2386,7 +2386,9 @@ details.frow[open ] summary.flabel::after {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 7px 10px;
+  /* Step 18: tighter toggles — 5px padding (was 7px). An 11px label
+     does not need a 33px-tall button. */
+  padding: 5px 9px;
   border: 1px solid var(--line-soft);
   background: rgba(233, 227, 214, 0.025);
   font-family: var(--mono);
@@ -2486,8 +2488,15 @@ details.frow[open ] summary.flabel::after {
 }
 
 .bseg button {
-  flex: 1;
-  padding: 6px 6px;
+  /* Step 18: basis auto (not 0) so the five buttons size to their
+     labels when there is room, and shrink with an ellipsis when the
+     bay narrows — the old flex: 1 forced equal widths and overflowed
+     the 253px geography column by 15px. Padding 6px 4px (was 6px). */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 4px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--bone-dim);
@@ -4867,11 +4876,14 @@ button:disabled {
    Revenue & Tips | Time & Speed + Exact Percentiles — with full-width
    toggle rows in each column, like the preset panel's rows. This comes
    after .petal-bay-grid so it overrides the flex column. The two
-   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap. */
+   groups stacked in column 3 keep the .bgroup + .bgroup 16px gap.
+   Step 18: the columns are content-sized (min 150px) instead of equal
+   fractions — the longest label only needs ~135px, so equal 208px
+   columns left ~70px of dead space in every row. */
 .petal-bay-measures {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(3, minmax(150px, max-content));
+  gap: 16px;
   align-items: start;
 }
 
@@ -5392,8 +5404,10 @@ button:disabled {
 
 .hud-core {
   /* Step 17: widened for the two-column builder (builder + 300px
-     summary). Was min(780px, calc(100% - 410px)). */
-  width: min(1000px, calc(100% - 360px));
+     summary). Was min(780px, calc(100% - 410px)).
+     Step 18: back down to 860px — the builder only needs ~560px now
+     that the toggles are content-sized, so the core shrinks with it. */
+  width: min(860px, calc(100% - 360px));
   border: 1px solid var(--line);
   background: rgba(23, 21, 18, 0.96);
   position: relative;
