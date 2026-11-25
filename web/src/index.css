@@ -4991,8 +4991,8 @@ button:disabled {
   top: 0;
   left: 0;
   width: 100%;
-  height: 560px;
-  transform-origin: 50% 430px;
+  height: 490px;
+  transform-origin: 50% 360px;
   z-index: 4;
   pointer-events: none;
 }
@@ -5327,8 +5327,9 @@ button:disabled {
   position: relative;
   z-index: 3;
   /* Step 13: pushed down so the standing banners' base plates
-     (petals 02/04, feet at ~y 213) clear the core's top edge. */
-  padding-top: 240px;
+     (petals 02/04, feet at ~y 213) clear the core's top edge.
+     Step 15: up 70px with the radial (feet now at ~y 147). */
+  padding-top: 170px;
   display: flex;
   justify-content: center;
 }
@@ -5459,6 +5460,7 @@ button:disabled {
   display: none;
 }
 
+/* Step 15: frame floor follows the radial up (560 -> 490). */
 .orbital-frame {
-  min-height: 560px;
+  min-height: 490px;
 }

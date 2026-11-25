@@ -85,16 +85,17 @@ export default function RadialDial({
   const isCompact = width < 1040;
   // Orbital halo geometry embracing `.hud-core` across -194° .. +14°
   // Step 13: the arcs run wider still — there was still black space at
-  // the top and sides (rx cap 620 -> 700, ry 250 -> 300). The centre
-  // dropped to cy 430 so the top petal's standing card clears the
-  // meter crown bar above it. The petals, the lock wedge, the ticks
-  // and the progress arc all ride these numbers, so they move out
-  // with the tracks.
+  // the top and sides (rx cap 620 -> 700, ry 250 -> 300). Step 15: the
+  // crown is gone, so the whole radial moved up 70px into the space it
+  // left (cy 430 -> 360, svg 560 -> 490) — the top petal's standing
+  // card now tops out ~30px below the frame edge, and the core rose
+  // with it. The petals, the lock wedge, the ticks and the progress
+  // arc all ride these numbers, so they move out with the tracks.
   const rx = Math.max(360, Math.min(700, width * 0.46));
   const ry = 300;
   const cx = width / 2;
-  const cy = 430;
-  const svgHeight = 560;
+  const cy = 360;
+  const svgHeight = 490;
 
   const presetNodes = useMemo(
     () => computeArcNodes(presets.length, rx, ry, -194, 14),

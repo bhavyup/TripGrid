@@ -281,78 +281,43 @@ export default function BuilderPanel({
       className={`bworkbench${locked ? " locked" : ""}`}
       inert={locked}
     >
-      {/* Top Utility Bar */}
+      {/* Step 15: one toolbar row — the preset dropdown on the left,
+          Reset at the right end. The "Seed from preset" label and the
+          "N measures · N dims · N filters" summary are gone. */}
       <div className="btoolbar">
-        <div className="btoolbar-left">
-          <label className="btoolbar-label" htmlFor="builder-preset-select">
-            Seed from preset
-          </label>
-          <select
-            id="builder-preset-select"
-            className="bselect"
-            value=""
-            onChange={(e) => {
-              const p = presets.find((x) => x.id === e.target.value);
-              if (p?.spec) onChange(draftFromSpec(p.spec));
-            }}
-          >
-            <option value="">Choose a preset template…</option>
-            {presets
-              .filter((p) => p.kind === "spec")
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-          </select>
-        </div>
-
-        <div className="btoolbar-right">
-          <span className="bclause-summary">
-            {draft.measures.length} measure
-            {draft.measures.length === 1 ? "" : "s"} · {draft.dimensions.length}{" "}
-            dim{draft.dimensions.length === 1 ? "" : "s"} · {activeFilterCount}{" "}
-            filter{activeFilterCount === 1 ? "" : "s"}
-          </span>
-          <button
-            type="button"
-            className="breset"
-            onClick={() => onChange({ ...DEFAULT_DRAFT })}
-          >
-            Reset builder
-          </button>
-        </div>
+        <select
+          id="builder-preset-select"
+          className="bselect"
+          value=""
+          onChange={(e) => {
+            const p = presets.find((x) => x.id === e.target.value);
+            if (p?.spec) onChange(draftFromSpec(p.spec));
+          }}
+        >
+          <option value="">Choose a preset template…</option>
+          {presets
+            .filter((p) => p.kind === "spec")
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+              </option>
+            ))}
+        </select>
+        <button
+          type="button"
+          className="breset"
+          onClick={() => onChange({ ...DEFAULT_DRAFT })}
+        >
+          Reset builder
+        </button>
       </div>
 
       {/* Focused petal bay OR full 3-bay composer */}
       {activePetal ? (
         <div className="builder-focused-bay" data-petal={activePetal}>
-          {activeFilterTokens.length > 0 && (
-            <div className="active-filters" aria-label="Active filters">
-              {activeFilterTokens.map((tok) => (
-                <button
-                  key={tok.id}
-                  type="button"
-                  className="af-token"
-                  title={`Remove ${tok.label} filter`}
-                  onClick={() => setFilter(tok.id, undefined)}
-                >
-                  <span className="af-k">{tok.label}:</span>{" "}
-                  <span className="af-v">{tok.value}</span>
-                  <span className="af-x" aria-hidden="true">
-                    ×
-                  </span>
-                </button>
-              ))}
-              <button
-                type="button"
-                className="linkbtn mono-xs"
-                onClick={clearAllFilters}
-              >
-                Clear filters
-              </button>
-            </div>
-          )}
+          {/* Step 15: the active-filter token row is gone (it only ever
+              showed the geography pick, e.g. "Pickup: Manhattan").
+              Filters still show in the blueprint "Where" cell below. */}
 
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -1139,26 +1104,8 @@ export default function BuilderPanel({
             <span>Narrow which trips are scanned</span>
           </div>
 
-          {/* Always-visible active filter tokens strip */}
-          {activeFilterTokens.length > 0 && (
-            <div className="active-filters" aria-label="Active filters">
-              {activeFilterTokens.map((tok) => (
-                <button
-                  key={tok.id}
-                  type="button"
-                  className="af-token"
-                  title={`Remove ${tok.label} filter`}
-                  onClick={() => setFilter(tok.id, undefined)}
-                >
-                  <span className="af-k">{tok.label}:</span>{" "}
-                  <span className="af-v">{tok.value}</span>
-                  <span className="af-x" aria-hidden="true">
-                    ×
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Step 15: the active-filter token strip is gone here too
+              (same row as in the focused bay). */}
 
           {/* 4 focused Filter Sub-Tabs */}
           <div className="ftabs" role="tablist" aria-label="Filter categories">
