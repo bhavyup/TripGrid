@@ -5015,6 +5015,14 @@ button:disabled {
   background: transparent;
   display: block;
   cursor: pointer;
+  /* Step 14: the ring layer is pointer-events: none (its 560px box
+     must not swallow clicks meant for the builder panel underneath),
+     so the petals opt back in here. Before this the layer carried an
+     inline pointer-events: auto in builder mode, which put its box
+     over the core (z-index 4 vs 3) and made every BuilderPanel button
+     under it dead — the petals worked (they ride the layer) while the
+     chips did nothing. The inline style is gone from the component. */
+  pointer-events: auto;
 }
 
 .orb-petal-builder {

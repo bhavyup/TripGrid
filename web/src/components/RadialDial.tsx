@@ -233,34 +233,6 @@ export default function RadialDial({
   const rayInnerX = cx + rx * 0.835 * Math.cos(rayRad);
   const rayInnerY = cy + ry * 0.835 * Math.sin(rayRad);
 
-  // Step 13 — meter crown: a literal analog gauge. The needle sweeps
-  // -55 deg .. +55 deg (0 deg = straight up) as `progress` goes
-  // 0 -> 1, so it rests at the left stop when idle, sweeps with the
-  // run, and parks at full when the answer lands. Pivot (75, 58) in a
-  // 150x64 viewBox; scale radius 44, ticks at 0/25/50/75/100%.
-  const METER_PIVOT = { x: 75, y: 58 };
-  const METER_R = 44;
-  const needleDeg = -55 + Math.min(1, Math.max(0, progress)) * 110;
-  const meterPoint = (frac: number, r: number) => {
-    const a = ((-55 + frac * 110) * Math.PI) / 180;
-    return {
-      x: METER_PIVOT.x + r * Math.sin(a),
-      y: METER_PIVOT.y - r * Math.cos(a),
-    };
-  };
-  const meterArcStart = meterPoint(0, METER_R);
-  const meterArcEnd = meterPoint(1, METER_R);
-  const meterTicks = [0, 0.25, 0.5, 0.75, 1].map((frac) => {
-    const outer = meterPoint(frac, METER_R);
-    const inner = meterPoint(frac, METER_R - (frac % 0.5 === 0 ? 8 : 5));
-    return { frac, x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y };
-  });
-  const phaseLabel = running
-    ? (hudAct && hudAct !== "locked" ? hudAct : "scanning").toUpperCase()
-    : progress >= 1
-      ? "DONE"
-      : "IDLE";
-
   return (
     <div
       className={`orbital-hud${mode === "builder" ? " is-builder" : " is-presets"}${running ? ` act-${hudAct}` : ""}`}
@@ -356,7 +328,6 @@ export default function RadialDial({
             style={{
               opacity: Math.max(0, 1 - morphProgress * 1.45),
               transform: `scale(${1 - morphProgress * 0.05})`,
-              pointerEvents: mode === "presets" ? "auto" : "none",
             }}
           >
             {presets.map((p, idx) => {
@@ -404,7 +375,6 @@ export default function RadialDial({
             style={{
               opacity: Math.max(0, (morphProgress - 0.18) / 0.82),
               transform: `scale(${0.95 + morphProgress * 0.05})`,
-              pointerEvents: mode === "builder" ? "auto" : "none",
             }}
           >
             {BUILDER_PETALS.map((petal, idx) => {
@@ -430,91 +400,23 @@ export default function RadialDial({
                   <span className="dp-card">
                     <span className="dp-top">
                       <span className="dp-idx">{petal.code}</span>
-                      <span className="dp-tag">{petal.title}</span>
+                      {/* Step 14: the small line carries the current
+                          selection; the big line names what the petal
+                          IS for. Before this the big line showed the
+                          selection ("Trips") and the purpose hid in the
+                          small tag — backwards. */}
+                      <span className="dp-tag">{builderSummaries[petal.id]}</span>
                     </span>
-                    <span className="dp-title">{builderSummaries[petal.id]}</span>
+                    <span className="dp-title">{petal.title}</span>
                   </span>
                 </button>
               );
             })}
           </div>
 
-          {/* Step 13: the crown is back, redesigned as a literal meter —
-              a small analog gauge whose needle is the run progress
-              (rest left when idle, sweeps as the query runs, parks at
-              full when it lands), with the phase readout and the petal
-              step buttons flanking it. */}
-          <div
-            className="orb-meter-crown"
-            role="meter"
-            aria-label="Run progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(Math.min(1, Math.max(0, progress)) * 100)}
-          >
-            <button
-              type="button"
-              className="dial-step-btn"
-              aria-label="Previous dial item"
-              onClick={() => stepSelection(-1)}
-            >
-              ‹
-            </button>
-            <svg
-              className="orb-meter"
-              width="150"
-              height="64"
-              viewBox="0 0 150 64"
-              aria-hidden="true"
-            >
-              <path
-                d={`M ${meterArcStart.x.toFixed(1)} ${meterArcStart.y.toFixed(1)} A ${METER_R} ${METER_R} 0 0 1 ${meterArcEnd.x.toFixed(1)} ${meterArcEnd.y.toFixed(1)}`}
-                className="orb-meter-scale"
-              />
-              {meterTicks.map((t) => (
-                <line
-                  key={t.frac}
-                  x1={t.x1.toFixed(1)}
-                  y1={t.y1.toFixed(1)}
-                  x2={t.x2.toFixed(1)}
-                  y2={t.y2.toFixed(1)}
-                  className={t.frac % 0.5 === 0 ? "orb-meter-tick major" : "orb-meter-tick"}
-                />
-              ))}
-              <text x={meterArcStart.x.toFixed(1)} y="52" textAnchor="middle" className="orb-meter-label">0</text>
-              <text x={meterArcEnd.x.toFixed(1)} y="52" textAnchor="middle" className="orb-meter-label">100</text>
-              <g
-                className="orb-meter-needle"
-                style={{
-                  transform: `rotate(${needleDeg.toFixed(1)}deg)`,
-                  transformOrigin: `${METER_PIVOT.x}px ${METER_PIVOT.y}px`,
-                }}
-              >
-                <line
-                  x1={METER_PIVOT.x}
-                  y1={METER_PIVOT.y}
-                  x2={METER_PIVOT.x}
-                  y2={METER_PIVOT.y - 43}
-                  className="orb-meter-needle-line"
-                />
-              </g>
-              <circle cx={METER_PIVOT.x} cy={METER_PIVOT.y} r="5" className="orb-meter-hub" />
-            </svg>
-            <div className="orb-meter-readout">
-              <span className="orb-meter-phase">{phaseLabel}</span>
-              <span className="orb-meter-pct">
-                {Math.round(Math.min(1, Math.max(0, progress)) * 100)}%
-              </span>
-            </div>
-            <button
-              type="button"
-              className="dial-step-btn"
-              aria-label="Next dial item"
-              onClick={() => stepSelection(1)}
-            >
-              ›
-            </button>
-          </div>
+          {/* Step 14: the meter crown is out at the user's word — the
+              arch stays open. Its CSS stays, so restoring the gauge
+              is one JSX block. The step-11 crown bridge CSS stays too. */}
 
           {/* Central HUD Core embraced directly inside the orbital arch */}
           <div className="hud-core-shell">

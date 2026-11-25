@@ -429,8 +429,8 @@ export default function InstrumentConsole({
                 hudAct={choreography?.act}
               >
                 {/* STEP 13: builder restored — the core holds the
-                    BuilderPanel again, framed by the standing banners
-                    and the meter crown. */}
+                    BuilderPanel again, framed by the standing banners.
+                    (The meter crown from step 13 is out per step 14.) */}
             <BuilderPanel
               catalogue={catalogue}
               zones={zones}
