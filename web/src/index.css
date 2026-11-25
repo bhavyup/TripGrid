@@ -4991,48 +4991,113 @@ button:disabled {
   top: 0;
   left: 0;
   width: 100%;
-  height: 480px;
-  transform-origin: 50% 310px;
+  height: 560px;
+  transform-origin: 50% 430px;
   z-index: 4;
   pointer-events: none;
 }
 
+/* Step 13: the petal banners stand 3D on the track plane instead of
+   lying flat in it. The button is only the positioned hit-area
+   (bottom-anchored at the track point, translate -50%/-100% in the
+   component); the visible card inside leans back on its bottom edge
+   (perspective + rotateX) like a signboard planted on the track, with
+   a cast shadow below it and a small base plate (::after) sitting on
+   the track line. The active banner's plate turns amber. */
 .orb-petal {
   position: absolute;
   left: 0;
   top: 0;
   width: 132px;
   min-height: 44px;
-  padding: 6px 9px 7px;
-  border: 1px solid var(--line);
-  background: rgba(24, 22, 19, 0.96);
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: block;
+  cursor: pointer;
+}
+
+.orb-petal-builder {
+  width: 146px;
+  min-height: 48px;
+}
+
+.dp-card {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 9px 7px;
+  border: 1px solid var(--line);
+  /* A visible bottom edge: the plaque's thickness, so the card reads
+     as a solid sign standing on the track, not a flat label. */
+  border-bottom: 3px solid rgba(233, 227, 214, 0.28);
+  background: rgba(24, 22, 19, 0.96);
   text-align: left;
+  transform: perspective(500px) rotateX(28deg);
+  transform-origin: 50% 100%;
+  box-shadow: 0 22px 30px rgba(0, 0, 0, 0.8);
   transition:
     border-color 140ms ease,
     background 140ms ease,
     color 140ms ease;
 }
 
-.orb-petal-builder {
-  width: 146px;
+.orb-petal-builder .dp-card {
   min-height: 48px;
   padding: 7px 10px 8px;
 }
 
+/* Contact shadow on the track plane: a soft dark patch under the
+   sign's foot, the cue that the banner stands ON the surface. */
+.orb-petal::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  width: 96px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 50%;
+  filter: blur(3px);
+}
+
+.orb-petal::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 3px;
+  background: rgba(233, 227, 214, 0.35);
+}
+
 .orb-petal:hover {
-  border-color: var(--bone-dim);
-  background: var(--panel);
   z-index: 6;
 }
 
+.orb-petal:hover .dp-card {
+  border-color: var(--bone-dim);
+  background: var(--panel);
+}
+
 .orb-petal.active {
-  border-color: var(--amber);
-  background: rgba(255, 178, 36, 0.13);
   z-index: 7;
+}
+
+.orb-petal.active .dp-card {
+  border-color: var(--amber);
+  border-bottom-color: var(--amber);
+  background: rgba(255, 178, 36, 0.13);
+}
+
+.orb-petal.active::after {
+  background: var(--amber);
 }
 
 .dp-top {
@@ -5163,13 +5228,99 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Step 13 — meter crown: the old bay/azimuth bridge is replaced by a
+   literal analog gauge. A slim bar at the top of the frame holds the
+   gauge (scale arc + ticks + a needle that sweeps with run progress),
+   the phase readout, and the petal step buttons. The needle is an SVG
+   <g> rotated from its pivot; the 160ms transition smooths the
+   100ms progress updates into a continuous sweep. */
+.orb-meter-crown {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: rgba(23, 21, 18, 0.96);
+  z-index: 5;
+}
+
+.orb-meter {
+  display: block;
+}
+
+.orb-meter-scale {
+  fill: none;
+  stroke: rgba(233, 227, 214, 0.45);
+  stroke-width: 1.5;
+}
+
+.orb-meter-tick {
+  stroke: rgba(167, 158, 141, 0.5);
+  stroke-width: 1;
+}
+
+.orb-meter-tick.major {
+  stroke: rgba(233, 227, 214, 0.65);
+  stroke-width: 1.3;
+}
+
+.orb-meter-label {
+  fill: var(--bone-faint);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.orb-meter-needle {
+  transition: transform 160ms linear;
+  transform-box: view-box;
+}
+
+.orb-meter-needle-line {
+  stroke: var(--amber);
+  stroke-width: 2;
+}
+
+.orb-meter-hub {
+  fill: var(--amber);
+  stroke: var(--ground);
+  stroke-width: 1.2;
+}
+
+.orb-meter-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 64px;
+}
+
+.orb-meter-phase {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.orb-meter-pct {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Central HUD Execution Core framed inside the Orbital Halo */
 .hud-core-shell {
   position: relative;
   z-index: 3;
-  /* Step 11: pushed down so the wider arc's lower petals (02/04)
-     clear the core's top edge. */
-  padding-top: 170px;
+  /* Step 13: pushed down so the standing banners' base plates
+     (petals 02/04, feet at ~y 213) clear the core's top edge. */
+  padding-top: 240px;
   display: flex;
   justify-content: center;
 }
@@ -5251,6 +5402,7 @@ button:disabled {
    InstrumentConsole covers the clicks. */
 .dial-wrap.locked .orbital-ring-layer,
 .dial-wrap.locked .orb-crown-bridge,
+.dial-wrap.locked .orb-meter-crown,
 .dial-wrap.locked .orbital-svg,
 .dial-wrap.locked .dial-compact {
   opacity: 0.6;
@@ -5291,13 +5443,14 @@ button:disabled {
 
 /* STEP 12 — builder commented out for now, tracks only.
    The empty core must not render as a box, and the frame must stay tall
-   enough for the full 480px track SVG (it would otherwise shrink to the
-   shell's 170px padding and clip the arcs). Both rules are inert once the
-   BuilderPanel is uncommented (normal frame is ~886px tall). */
+   enough for the full track SVG (it would otherwise shrink to the
+   shell's padding and clip the arcs). Both rules are inert once the
+   BuilderPanel is uncommented (normal frame is ~950px tall). Step 13
+   restores the builder and raises the floor to the new 560px SVG. */
 .hud-core:empty {
   display: none;
 }
 
 .orbital-frame {
-  min-height: 480px;
+  min-height: 560px;
 }
