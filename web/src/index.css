@@ -4941,10 +4941,21 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+/* Step 23: the Group By bay gets the same three-column setting as the
+   measures bay — content-sized columns (the dimension labels were
+   clipping to "Y… range" / "Pick… 8" in the equal 1fr columns, whose
+   two-across toggles only gave each label ~70px) with full-width
+   toggle rows in each column, so every label shows in full with its
+   count at the right. */
 .petal-dims-cols {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, max-content);
   gap: 16px;
+  justify-content: space-between;
+}
+
+.petal-bay-dims .btoggle-grid {
+  grid-template-columns: 1fr;
 }
 
 .petal-output-bar {
@@ -4955,6 +4966,11 @@ button:disabled {
   flex-wrap: wrap;
   padding-top: 10px;
   border-top: 1px solid var(--line-soft);
+  /* Step 23: row — Limit and Order sit side by side, Limit left and
+     Order right. The .boutput rule sets flex-direction: column; this
+     comes later at the same specificity, so row wins here. The two
+     rows need ~400px together and the bay gives ~464px, so they fit. */
+  flex-direction: row;
 }
 
 .petal-sub-bar {
