@@ -255,6 +255,71 @@ export default function BuilderPanel({
     ));
   }
 
+  // Step 31 — the Schedule mode switch, the same piece as the Geography
+  // switch above: "DAYS & HOURS / PAYMENTS & TRIP BOUNDS" in IBM Plex
+  // Mono caps, centred, large amber "/" between them, same
+  // letter-by-letter wave. Same STEP/DUR (12ms/180ms, about 0.8s). The
+  // "Days & Hours" option carries the active-filter count, like the
+  // geo switch carries the zone count.
+  const SCHED_SWITCH_STEP = 12; // ms per letter
+  const SCHED_SWITCH_DUR = 180; // ms — keep in step with the CSS transition
+  const SCHED_SWITCH_TEXTS = {
+    clock: "Days & Hours",
+    bounds: "Payments & Trip Bounds",
+  } as const;
+  const prevSchedSubTabRef = useRef<"clock" | "bounds">(schedSubTab);
+  useEffect(() => {
+    prevSchedSubTabRef.current = schedSubTab;
+  }, [schedSubTab]);
+  // On the render where the tab just changed, the ref still holds the
+  // old tab, so the outgoing and incoming waves can be told apart.
+  const prevSchedSubTab = prevSchedSubTabRef.current;
+  const leavingSchedSubTab = prevSchedSubTab !== schedSubTab ? prevSchedSubTab : null;
+  const schedSwitchDrainMs =
+    leavingSchedSubTab !== null
+      ? (SCHED_SWITCH_TEXTS[leavingSchedSubTab].length - 1) * SCHED_SWITCH_STEP + SCHED_SWITCH_DUR
+      : 0;
+
+  function schedSwitchKind(id: "clock" | "bounds"): "leaving" | "entering" | "steady" {
+    if (leavingSchedSubTab === null) return "steady";
+    return id === leavingSchedSubTab ? "leaving" : "entering";
+  }
+
+  // Per-letter transition-delay (ms) for one letter of a switch option.
+  // `side` is which side of the "/" the option sits on; `index` the
+  // letter's position, `len` the option's length.
+  function schedSwitchLetterDelay(
+    side: "left" | "right",
+    kind: "leaving" | "entering" | "steady",
+    index: number,
+    len: number,
+  ): number {
+    if (kind === "steady" || reduceMotion) return 0;
+    // Distance from the "/" in letters: the left option's nearest
+    // letter is its last, the right option's nearest is its first.
+    const dist = side === "left" ? len - 1 - index : index;
+    if (kind === "leaving") {
+      // Farthest changes first, nearest last: delay grows toward the "/".
+      return (len - 1 - dist) * SCHED_SWITCH_STEP;
+    }
+    // Entering: nearest changes first, after the drain finishes.
+    return schedSwitchDrainMs + dist * SCHED_SWITCH_STEP;
+  }
+
+  function schedSwitchLetters(text: string, id: "clock" | "bounds") {
+    const side = id === "clock" ? "left" : "right";
+    const kind = schedSwitchKind(id);
+    return [...text].map((ch, i) => (
+      <span
+        key={i}
+        className="sched-letter"
+        style={{ transitionDelay: `${schedSwitchLetterDelay(side, kind, i, text.length)}ms` }}
+      >
+        {ch === " " ? "\u00a0" : ch}
+      </span>
+    ));
+  }
+
   const measureGroups = useMemo(
     () => groupCatalogueMeasures(catalogue.measures),
     [catalogue.measures],
@@ -659,14 +724,14 @@ export default function BuilderPanel({
                   </div>
                   <div className="bgroup">
                     <div className="bgroup-label">
-                      <span>Drop-off Boroughs &amp; Airports</span>
+                      <span>Drop-off Boroughs</span>
                       {doBoroughs.length > 0 && (
                         <button
                           type="button"
                           className="linkbtn mono-xs"
                           onClick={() => setFilter("do_boroughs", undefined)}
                         >
-                          Clear drop-off
+                          Clear
                         </button>
                       )}
                     </div>
@@ -760,9 +825,9 @@ export default function BuilderPanel({
           )}
 
           {activePetal === "schedule" && (
-            <div className="petal-bay-grid" role="region" aria-label="Schedule and trip filters">
+            <div className="petal-bay-grid petal-bay-schedule" role="region" aria-label="Schedule and trip filters">
               <div className="petal-sub-bar">
-                <div className="bseg" role="tablist" aria-label="Schedule and trip parameter section">
+                <div className="sched-switch" role="tablist" aria-label="Schedule and trip parameter section">
                   <button
                     type="button"
                     role="tab"
@@ -770,8 +835,24 @@ export default function BuilderPanel({
                     className={schedSubTab === "clock" ? "on" : ""}
                     onClick={() => setSchedSubTab("clock")}
                   >
-                    Days &amp; Hours {weekdaysVal.length + hoursVal.length > 0 ? `(${weekdaysVal.length + hoursVal.length})` : ""}
+                    {schedSwitchLetters(SCHED_SWITCH_TEXTS.clock, "clock")}
+                    {weekdaysVal.length + hoursVal.length > 0 && (
+                      <span
+                        className="sched-switch-count"
+                        style={{
+                          transitionDelay: `${schedSwitchLetterDelay(
+                            "left",
+                            schedSwitchKind("clock"),
+                            SCHED_SWITCH_TEXTS.clock.length - 1,
+                            SCHED_SWITCH_TEXTS.clock.length,
+                          )}ms`,
+                        }}
+                      >
+                        ({weekdaysVal.length + hoursVal.length})
+                      </span>
+                    )}
                   </button>
+                  <span className="sched-switch-slash" aria-hidden="true">/</span>
                   <button
                     type="button"
                     role="tab"
@@ -779,7 +860,7 @@ export default function BuilderPanel({
                     className={schedSubTab === "bounds" ? "on" : ""}
                     onClick={() => setSchedSubTab("bounds")}
                   >
-                    Payments &amp; Trip Bounds
+                    {schedSwitchLetters(SCHED_SWITCH_TEXTS.bounds, "bounds")}
                   </button>
                 </div>
               </div>
@@ -890,6 +971,7 @@ export default function BuilderPanel({
                   </div>
                 </div>
               ) : (
+                <>
                 <div className="petal-two-col">
                   <div className="bgroup">
                     <div className="bgroup-label">
@@ -919,28 +1001,13 @@ export default function BuilderPanel({
                         </button>
                       ))}
                     </div>
-                    <div style={{ marginTop: 12 }}>
-                      <button
-                        type="button"
-                        aria-pressed={draft.filters["sane_only"] === true}
-                        className={`btoggle full${draft.filters["sane_only"] === true ? " on" : ""}`}
-                        onClick={() =>
-                          setFilter(
-                            "sane_only",
-                            draft.filters["sane_only"] === true ? undefined : true,
-                          )
-                        }
-                      >
-                        <span>Sane trips only (60s–4h, 0.1–200 mi)</span>
-                        <span className="btoggle-card">
-                          {draft.filters["sane_only"] === true ? "ON" : "OFF"}
-                        </span>
-                      </button>
-                    </div>
                   </div>
                   <div className="bgroup">
-                    <div className="bgroup-label">
-                      <span>Numeric Bounds</span>
+                    <div className="bound-head" aria-hidden="true">
+                      <span className="bound-head-label">Numeric Bounds</span>
+                      <span className="bound-head-min">Min</span>
+                      <span className="bound-head-dash" />
+                      <span className="bound-head-max">Max</span>
                     </div>
                     <div className="bounds-grid">
                       <div className="bound-pair">
@@ -1025,6 +1092,28 @@ export default function BuilderPanel({
                     </div>
                   </div>
                 </div>
+                <div className="sched-divider" aria-hidden="true" />
+                <div className="sane-row">
+                  <span className="sane-text">Sane trips only (60s–4h, 0.1–200 mi)</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={draft.filters["sane_only"] === true}
+                    aria-label="Sane trips only"
+                    className={`analog-switch${draft.filters["sane_only"] === true ? " on" : ""}`}
+                    onClick={() =>
+                      setFilter(
+                        "sane_only",
+                        draft.filters["sane_only"] === true ? undefined : true,
+                      )
+                    }
+                  >
+                    <span className="analog-state on-label" aria-hidden="true">ON</span>
+                    <span className="analog-state off-label" aria-hidden="true">OFF</span>
+                    <span className="analog-knob" aria-hidden="true" />
+                  </button>
+                </div>
+                </>
               )}
             </div>
           )}
@@ -1597,27 +1686,34 @@ export default function BuilderPanel({
                   <div className="bgroup-label">
                     <span>Data Quality</span>
                   </div>
-                  <button
-                    type="button"
-                    aria-pressed={draft.filters["sane_only"] === true}
-                    className={`btoggle full${draft.filters["sane_only"] === true ? " on" : ""}`}
-                    onClick={() =>
-                      setFilter(
-                        "sane_only",
-                        draft.filters["sane_only"] === true ? undefined : true,
-                      )
-                    }
-                  >
-                    <span>Sane trips only (60s–4h, 0.1–200 mi)</span>
-                    <span className="btoggle-card">
-                      {draft.filters["sane_only"] === true ? "ON" : "OFF"}
-                    </span>
-                  </button>
+                  <div className="sane-row">
+                    <span className="sane-text">Sane trips only (60s–4h, 0.1–200 mi)</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={draft.filters["sane_only"] === true}
+                      aria-label="Sane trips only"
+                      className={`analog-switch${draft.filters["sane_only"] === true ? " on" : ""}`}
+                      onClick={() =>
+                        setFilter(
+                          "sane_only",
+                          draft.filters["sane_only"] === true ? undefined : true,
+                        )
+                      }
+                    >
+                      <span className="analog-state on-label" aria-hidden="true">ON</span>
+                      <span className="analog-state off-label" aria-hidden="true">OFF</span>
+                      <span className="analog-knob" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="bgroup">
-                  <div className="bgroup-label">
-                    <span>Numeric Bounds</span>
+                  <div className="bound-head" aria-hidden="true">
+                    <span className="bound-head-label">Numeric Bounds</span>
+                    <span className="bound-head-min">Min</span>
+                    <span className="bound-head-dash" />
+                    <span className="bound-head-max">Max</span>
                   </div>
                   <div className="bounds-grid">
                     <div className="bound-pair">

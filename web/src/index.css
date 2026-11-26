@@ -7,6 +7,10 @@
    ============================================================ */
 
 :root {
+  /* Step 31: the app is dark, so the browser's own native controls
+     (select dropdown lists, scrollbars, date pickers) render dark too,
+     not white/blue. This one rule fixes the parts CSS cannot reach. */
+  color-scheme: dark;
   --ground: #121110;
   --ground-2: #171512;
   --panel: #1a1815;
@@ -1564,8 +1568,62 @@ details.frow[open ] summary.flabel::after {
   background: var(--panel);
 }
 
+/* Step 31: the zone checkboxes — the native box is the browser's own
+   (blue/white) and accent-color only tints it. Draw our own: a square
+   bone outline on the dark ground, amber fill and a dark check when
+   ticked. appearance: none keeps the real input (focusable, keyboard
+   operable) and paints the box ourselves. */
 .zitem input {
-  accent-color: var(--amber);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--bone-dim);
+  background: var(--ground);
+  cursor: pointer;
+}
+
+.zitem input:checked {
+  background: var(--amber);
+  border-color: var(--amber);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='9' viewBox='0 0 11 9'%3E%3Cpath d='M1 4.5L4 7.5L10 1' fill='none' stroke='%23141210' stroke-width='1.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.zitem input:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* Step 31: radios — same treatment as the checkboxes, but a circle
+   with an amber dot when picked. No radio is in the app today; this is
+   here so the first one that arrives is already themed. */
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1px solid var(--bone-dim);
+  border-radius: 50%;
+  background: var(--ground);
+  cursor: pointer;
+}
+
+input[type="radio"]:checked {
+  border-color: var(--amber);
+  background-image: radial-gradient(circle, var(--amber) 0px, var(--amber) 3px, transparent 4px);
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+input[type="radio"]:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 2px;
 }
 
 .zitem .zid {
@@ -2194,16 +2252,26 @@ details.frow[open ] summary.flabel::after {
   border: 1px solid var(--line);
   font-family: var(--mono);
   font-size: 12px;
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   /* Step 20: min-width 0 (was 240px) so the select shrinks to the
      space Reset leaves, instead of forcing the toolbar to wrap. */
   min-width: 0;
   flex: 1 1 auto;
   cursor: pointer;
+  /* Step 31: strip the browser's own dropdown arrow and draw our own
+     chevron in bone, so the control reads as part of the theme. The
+     option list itself is the browser's; color-scheme: dark on :root
+     makes it render dark instead of white. */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23e9e3d6' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
 
 .bselect:focus-visible {
-  outline: 1px solid var(--amber);
+  outline: none;
+  border-color: var(--amber);
 }
 
 .btoolbar-right {
@@ -2798,6 +2866,19 @@ details.frow[open ] summary.flabel::after {
   border-color: var(--amber);
   color: #141210;
   font-weight: 600;
+  /* Step 31: a calendar-type pick — the hour flips into place like a
+     calendar day being turned over, then settles. Only the pick
+     animates (the class being added); clearing it just fades back. */
+  animation: hcell-flip 0.32s ease;
+}
+
+@keyframes hcell-flip {
+  0% {
+    transform: perspective(320px) rotateX(88deg);
+  }
+  100% {
+    transform: perspective(320px) rotateX(0deg);
+  }
 }
 
 .sched-summary {
@@ -2957,11 +3038,21 @@ details.frow[open ] summary.flabel::after {
   font-size: 12px;
   padding: 6px 8px;
   font-variant-numeric: tabular-nums;
+  /* Step 31: hide the native spinner arrows — they are the browser's
+     own chrome and do not fit the theme. The field is typed into. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.numin-v2::-webkit-outer-spin-button,
+.numin-v2::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .numin-v2:focus {
-  outline: 1px solid var(--amber);
-  outline-offset: 0;
+  outline: none;
+  border-color: var(--amber);
 }
 
 /* ---------- 3. Archive Range Map Strip ---------- */
@@ -5061,6 +5152,128 @@ button:disabled {
   flex: 1 1 0;
 }
 
+/* Step 31 — the Schedule bay. Payment types go two per row (was three
+   across, which squeezed the buttons), and the two outer columns are
+   no longer equal: the Numeric Bounds column takes the freed width
+   (0.9fr / 1.1fr), so the min/max inputs have room to breathe. */
+.petal-bay-schedule .bchip-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.petal-bay-schedule .petal-two-col {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+/* Step 31 — the divider below the payments + bounds columns, and the
+   Sane-trips row that sits under it. The text is plain text, not a
+   button; only the switch beside it is clickable. */
+.sched-divider {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+}
+
+.sane-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sane-text {
+  font-size: 12.5px;
+  color: var(--bone);
+}
+
+/* Step 31 — the analog ON/OFF switch. A rectangular track (square
+   corners, like everything in this theme) with a chunky square knob
+   that slides across it, and the ON/OFF label the knob uncovers as it
+   moves — the physical-toggle feel, not a flat iOS pill. The knob is
+   bone-dim when off, amber when on; the track takes a faint amber
+   wash when on. The knob slides 32px (track 56, knob 20, 2px inset). */
+.analog-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  cursor: pointer;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.analog-switch:hover {
+  border-color: var(--bone-faint);
+}
+
+.analog-switch:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.analog-switch.on {
+  background: rgba(255, 178, 36, 0.08);
+  border-color: var(--amber-dim);
+}
+
+.analog-switch .analog-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--bone-dim);
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+
+.analog-switch.on .analog-knob {
+  transform: translateX(32px);
+  background: var(--amber);
+}
+
+.analog-switch .analog-state {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--bone-faint);
+  pointer-events: none;
+}
+
+.analog-switch .analog-state.on-label {
+  left: 7px;
+  color: var(--amber);
+}
+
+.analog-switch .analog-state.off-label {
+  right: 6px;
+}
+
+/* Step 31 — the Min/Max header over the Numeric Bounds counters.
+   One line with the "NUMERIC BOUNDS" label, on the same grid as the
+   bound pairs (112px 1fr 12px 1fr) so MIN sits over the min inputs and
+   MAX over the max inputs. Centred over each input column. */
+.bound-head {
+  display: grid;
+  grid-template-columns: 112px 1fr 12px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bone-faint);
+}
+
+.bound-head-min,
+.bound-head-max {
+  text-align: center;
+}
+
 /* Step 27: the Geography mode switch — "BOROUGHS & AIRPORTS /
    SPECIFIC TAXI ZONES" in IBM Plex Mono caps (the straight, robotic,
    single-stroke face — NOT the Fraunces italic from the first pass),
@@ -5132,6 +5345,82 @@ button:disabled {
 }
 
 .geo-switch-slash {
+  font-family: var(--mono);
+  font-style: normal;
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: 0;
+  color: var(--amber);
+}
+
+/* Step 31 — the Schedule mode switch, the same piece as the Geography
+   switch (step 27): "DAYS & HOURS / PAYMENTS & TRIP BOUNDS" in IBM
+   Plex Mono caps, centred, large amber "/" between them, same
+   letter-by-letter wave (transition-delay set inline; the CSS
+   transition is the colour fade, 0.18s — keep SCHED_SWITCH_DUR in
+   BuilderPanel.tsx in step with it). Centring is scoped to the
+   Schedule bay, same as the geo bay, because .petal-sub-bar is shared.
+   FONT SIZE: selections in .sched-switch button, "/" in
+   .sched-switch-slash, just below. */
+.petal-bay-schedule .petal-sub-bar {
+  justify-content: center;
+}
+
+.sched-switch {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 18px;
+  padding: 0px 0 2px;
+}
+
+.sched-switch button {
+  font-family: var(--mono);
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.sched-switch button:hover:not(.on) {
+  filter: brightness(1.35);
+}
+
+.sched-switch button:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 4px;
+}
+
+.sched-switch .sched-letter {
+  display: inline-block;
+  color: var(--bone-dim);
+  transition: color 0.18s ease;
+}
+
+.sched-switch button.on .sched-letter {
+  color: var(--amber);
+}
+
+.sched-switch .sched-switch-count {
+  display: inline-block;
+  margin-left: 0.3em;
+  color: var(--bone-dim);
+  transition: color 0.18s ease;
+}
+
+.sched-switch button.on .sched-switch-count {
+  color: var(--amber);
+}
+
+.sched-switch-slash {
   font-family: var(--mono);
   font-style: normal;
   font-weight: 400;
