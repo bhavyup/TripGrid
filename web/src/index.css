@@ -2890,15 +2890,23 @@ details.frow[open ] summary.flabel::after {
   color: var(--amber);
 }
 
-/* Step 28: the zone list is capped at 300px and scrolls inside it.
+/* Step 28: the zone list is capped and scrolls inside itself.
    Without a max-height the list grew to fit all 263 zones (~8,400px),
    stretching the whole Geography bay to 8,500px. The cap used to live
    only in the narrow-screen media query below 1180px, so on a desktop
-   viewport there was no cap at all. 300px shows ~9 zones at a time. */
+   viewport there was no cap at all.
+   Step 30: the cap is 152px, not 300px. 300px still left the zones
+   view (409px) taller than its counterpart, the boroughs view (261px).
+   Above the list sits 109px of switch + gaps + direction seg + search
+   bar, so 152px makes the zones view exactly 261px, the same as the
+   boroughs view. At 32px a zone that is 4 full zones plus a sliver of
+   the 5th, which also reads as "there is more, scroll". Both min and
+   max are pinned so the bay holds its height when the list is filtered
+   down to a few matches. */
 .zonelist-v2 {
   flex: 1;
-  min-height: 240px;
-  max-height: 300px;
+  min-height: 152px;
+  max-height: 152px;
   overflow-y: auto;
   border: 1px solid var(--line);
   border-top: none;
