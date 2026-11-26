@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const MONTHS = [
   "JAN",
@@ -53,6 +53,25 @@ export default function RangeGrid({
   const [pending, setPending] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(!!defaultExpanded);
+  // Month/year picker popover for the readout dates ("start" or "end" open, null closed).
+  const [picker, setPicker] = useState<"start" | "end" | null>(null);
+  // The year the popover is browsing; separate from the selection, so stepping years never selects.
+  const [pickerYear, setPickerYear] = useState<number>(() =>
+    Number((effectiveRange?.[0] ?? months[0] ?? "2017-01").slice(0, 4))
+  );
+
+  // Close the picker on Escape, and if a run starts while it is open.
+  useEffect(() => {
+    if (picker === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPicker(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picker]);
+  useEffect(() => {
+    if (locked) setPicker(null);
+  }, [locked]);
 
   const present = new Set(months);
   const years = [...new Set(months.map((m) => m.slice(0, 4)))].sort();
@@ -101,6 +120,39 @@ export default function RangeGrid({
     onChange(target);
   };
 
+  // The range the pickers edit: the effective span, or the whole archive when it is null.
+  const curSpan: [string, string] =
+    activeSpan ??
+    (months.length ? [months[0], months[months.length - 1]] : ["2017-01", "2017-01"]);
+  // What the readout shows: the effective span, or the whole archive span when it is null.
+  // (The dates are pickers in both cases, so "All" still shows two clickable dates.)
+  const displaySpan: [string, string] | null =
+    activeSpan ??
+    (rangeMonths.length > 0
+      ? [rangeMonths[0], rangeMonths[rangeMonths.length - 1]]
+      : null);
+  const firstYear = Number(years[0] ?? "2017");
+  const lastYear = Number(years[years.length - 1] ?? "2017");
+
+  // Open a picker for one end; the popover browses that end's year. Clicking the same date again closes it.
+  const openPicker = (side: "start" | "end") => {
+    if (isAudit || locked) return;
+    setPickerYear(Number((side === "start" ? curSpan[0] : curSpan[1]).slice(0, 4)));
+    setPicker((prev) => (prev === side ? null : side));
+  };
+
+  // Pick a month for one end; the other end is clamped so the range stays valid. Picking creates an explicit range.
+  const applyPicker = (side: "start" | "end", m: string) => {
+    setPicker(null);
+    setPending(null);
+    if (isAudit) return;
+    if (side === "start") {
+      onChange([m, m > curSpan[1] ? m : curSpan[1]]);
+    } else {
+      onChange([m < curSpan[0] ? m : curSpan[0], m]);
+    }
+  };
+
   const has2020 = months.some((m) => m.startsWith("2020-"));
   const has2025 = months.some((m) => m.startsWith("2025-"));
   const has2024 = months.some((m) => m.startsWith("2024-"));
@@ -110,31 +162,107 @@ export default function RangeGrid({
       className={`archive-strip${locked ? " locked" : ""}`}
       inert={locked}
     >
-      <div className="archive-head">
+      <div className={`archive-head${mode === "builder" ? " archive-head-builder" : ""}`}>
         <div className="archive-head-left">
           <span className="archive-readout">
             {pending ? (
               <span className="amber">
                 Start {pending} — pick end month
               </span>
-            ) : activeSpan ? (
+            ) : displaySpan ? (
               <>
-                <span className={value ? "amber" : ""}>
-                  {activeSpan[0]} → {activeSpan[1]}
+                <button
+                  type="button"
+                  className={`range-date-btn${value ? " amber" : ""}`}
+                  disabled={isAudit}
+                  title="Change start month"
+                  aria-haspopup="dialog"
+                  aria-expanded={picker === "start"}
+                  onClick={() => openPicker("start")}
+                >
+                  {displaySpan[0]}
+                </button>
+                <span className="range-swap" aria-hidden="true">
+                  <svg width="22" height="12" viewBox="0 0 22 12" fill="none" aria-hidden="true">
+                    <path d="M20 3H6" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M7 1L2 3l5 2Z" fill="currentColor" />
+                    <path d="M2 9h14" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M15 7l5 2-5 2Z" fill="currentColor" />
+                  </svg>
                 </span>
+                <button
+                  type="button"
+                  className={`range-date-btn${value ? " amber" : ""}`}
+                  disabled={isAudit}
+                  title="Change end month"
+                  aria-haspopup="dialog"
+                  aria-expanded={picker === "end"}
+                  onClick={() => openPicker("end")}
+                >
+                  {displaySpan[1]}
+                </button>
               </>
             ) : (
-              <>
-                {rangeMonths.length > 0 ? (
-                  <span>
-                    {rangeMonths[0]} → {rangeMonths[rangeMonths.length - 1]}
-                  </span>
-                ) : (
-                  <span>Whole archive</span>
-                )}
-              </>
+              <span>Whole archive</span>
             )}
           </span>
+          {picker !== null && (
+            <>
+              <div
+                className="range-picker-backdrop"
+                onClick={() => setPicker(null)}
+                aria-hidden="true"
+              />
+              <div
+                className="range-picker"
+                role="dialog"
+                aria-label={picker === "start" ? "Choose start month" : "Choose end month"}
+              >
+                <div className="range-picker-kicker">
+                  {picker === "start" ? "Start month" : "End month"}
+                </div>
+                <div className="range-picker-year">
+                  <button
+                    type="button"
+                    className="range-picker-year-btn"
+                    disabled={pickerYear <= firstYear}
+                    aria-label="Previous year"
+                    onClick={() => setPickerYear((y) => Math.max(firstYear, y - 1))}
+                  >
+                    ‹
+                  </button>
+                  <span className="range-picker-year-val">{pickerYear}</span>
+                  <button
+                    type="button"
+                    className="range-picker-year-btn"
+                    disabled={pickerYear >= lastYear}
+                    aria-label="Next year"
+                    onClick={() => setPickerYear((y) => Math.min(lastYear, y + 1))}
+                  >
+                    ›
+                  </button>
+                </div>
+                <div className="range-picker-months">
+                  {MONTHS.map((label, idx) => {
+                    const m = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
+                    const disabled = !present.has(m);
+                    const selected = m === (picker === "start" ? curSpan[0] : curSpan[1]);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`range-picker-month${selected ? " on" : ""}`}
+                        disabled={disabled}
+                        onClick={() => applyPicker(picker, m)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Inline compact 10-year visual timeline (always visible, clickable per year) */}
@@ -162,16 +290,16 @@ export default function RangeGrid({
           </div>
         )}
 
-        <div className="archive-controls">
+        <div className={`archive-controls${mode === "builder" ? " archive-controls-builder" : ""}`}>
           {!isAudit && (
-            <div className="range-shortcuts" role="group" aria-label="Quick time ranges">
+            <div className={`range-shortcuts ${!expanded && mode === "builder" ? "range-shortcuts-expanded" : ""}`} role="group" aria-label="Quick time ranges">
               <button
                 type="button"
                 className={`rshort${value === null ? " on" : ""}`}
                 aria-pressed={value === null}
                 onClick={() => applyShortcut(null)}
               >
-                {mode === "builder" ? "All years" : "Preset default"}
+                {mode === "builder" ? "All" : "Preset default"}
               </button>
               {last12 && (
                 <button
@@ -230,7 +358,7 @@ export default function RangeGrid({
       {expanded && (
         <>
           <div className="pgrid-scroll">
-            <div className="rgrid-v2">
+            <div className={`rgrid-v2${mode === "builder" ? " rgrid-v2-builder" : ""}`}>
               <div className="prow-v2 head">
                 <div className="blabel">Year</div>
                 {MONTHS.map((m) => (
@@ -301,13 +429,7 @@ export default function RangeGrid({
           </div>
 
           <div className="archive-foot">
-            <span className="archive-hint">
-              {hovered
-                ? `${hovered} · ${fmt(monthRows[hovered] ?? 0)} trips`
-                : isAudit
-                  ? "The junk audit reads every partition in the archive."
-                  : "Click any year to isolate it, or click two months for a custom span."}
-            </span>
+            
             <div className="legend-v2">
               <span>
                 <i className="sw read" />
@@ -315,7 +437,7 @@ export default function RangeGrid({
               </span>
               <span>
                 <i className="sw muted" />
-                Outside range
+                Out of range
               </span>
               <span>
                 <i className="sw pruned" />
