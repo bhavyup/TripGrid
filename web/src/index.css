@@ -3147,6 +3147,11 @@ input[type="radio"]:focus-visible {
 .range-date-btn:disabled {
   cursor: default;
 }
+/* The not-yet-chosen end, mid-selection: dimmed so it reads as a placeholder,
+   but still a button that opens the end picker. */
+.range-date-btn.unset {
+  color: var(--bone-faint);
+}
 
 /* The anchor for the popover: each date button sits in its own
    wrapper, so the picker drops below the date that was clicked. */

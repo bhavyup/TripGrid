@@ -130,6 +130,9 @@ export default function RangeGrid({
   const curSpan: [string, string] =
     activeSpan ??
     (months.length ? [months[0], months[months.length - 1]] : ["2017-01", "2017-01"]);
+  // Mid-selection (a start picked in the grid, end not yet chosen): the picker
+  // anchors on the pending start, so the pending month is the highlighted one.
+  const pickerSpan: [string, string] = pending ? [pending, pending] : curSpan;
   // What the readout shows: the effective span, or the whole archive span when it is null.
   // (The dates are pickers in both cases, so "All" still shows two clickable dates.)
   const displaySpan: [string, string] | null =
@@ -150,7 +153,7 @@ export default function RangeGrid({
   // Open a picker for one end; the popover browses that end's year. Clicking the same date again closes it.
   const openPicker = (side: "start" | "end") => {
     if (isAudit || locked) return;
-    setPickerYear(Number((side === "start" ? curSpan[0] : curSpan[1]).slice(0, 4)));
+    setPickerYear(Number((side === "start" ? pickerSpan[0] : pickerSpan[1]).slice(0, 4)));
     setPickerView("month");
     setPicker((prev) => (prev === side ? null : side));
   };
@@ -161,9 +164,9 @@ export default function RangeGrid({
     setPending(null);
     if (isAudit) return;
     if (side === "start") {
-      onChange([m, m > curSpan[1] ? m : curSpan[1]]);
+      onChange([m, m > pickerSpan[1] ? m : pickerSpan[1]]);
     } else {
-      onChange([m < curSpan[0] ? m : curSpan[0], m]);
+      onChange([m < pickerSpan[0] ? m : pickerSpan[0], m]);
     }
   };
 
@@ -215,7 +218,7 @@ export default function RangeGrid({
               {MONTHS.map((label, idx) => {
                 const m = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
                 const disabled = !present.has(m);
-                const selected = m === (picker === "start" ? curSpan[0] : curSpan[1]);
+                const selected = m === (picker === "start" ? pickerSpan[0] : pickerSpan[1]);
                 return (
                   <button
                     key={label}
@@ -296,9 +299,44 @@ export default function RangeGrid({
         <div className="archive-head-left">
           <span className="archive-readout">
             {pending ? (
-              <span className="amber">
-                {pending} — Unselected
-              </span>
+              <>
+                <span className="range-date-wrap">
+                  <button
+                    type="button"
+                    className="range-date-btn amber"
+                    disabled={isAudit}
+                    title="Change start month"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker === "start"}
+                    onClick={() => openPicker("start")}
+                  >
+                    {pending}
+                  </button>
+                  {picker === "start" && pickerPopover}
+                </span>
+                <span className="range-swap" aria-hidden="true">
+                  <svg width="28" height="16" viewBox="0 0 28 16" fill="none" aria-hidden="true">
+                    <path d="M2 4h23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M25 4L22 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M26 12H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M3 12l3 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <span className="range-date-wrap">
+                  <button
+                    type="button"
+                    className="range-date-btn unset"
+                    disabled={isAudit}
+                    title="Choose end month"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker === "end"}
+                    onClick={() => openPicker("end")}
+                  >
+                    Unselected
+                  </button>
+                  {picker === "end" && pickerPopover}
+                </span>
+              </>
             ) : displaySpan ? (
               <>
                 <span className="range-date-wrap">
