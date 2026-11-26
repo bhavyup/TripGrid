@@ -316,11 +316,11 @@ export default function RangeGrid({
                   {picker === "start" && pickerPopover}
                 </span>
                 <span className="range-swap" aria-hidden="true">
-                  <svg width="28" height="14" viewBox="0 0 28 14" fill="none" aria-hidden="true">
-                    <path d="M2 4h17" stroke="currentColor" strokeWidth="2" />
-                    <path d="M19 1l6 3-6 3Z" fill="currentColor" />
-                    <path d="M26 10H9" stroke="currentColor" strokeWidth="2" />
-                    <path d="M9 7L3 10l6 3Z" fill="currentColor" />
+                  <svg width="28" height="16" viewBox="0 0 28 16" fill="none" aria-hidden="true">
+                    <path d="M2 4h23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M25 4L22 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M26 12H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M3 12l3 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                 </span>
                 <span className="range-date-wrap">
