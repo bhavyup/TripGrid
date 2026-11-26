@@ -2890,19 +2890,19 @@ details.frow[open ] summary.flabel::after {
   color: var(--amber);
 }
 
+/* Step 28: the zone list is capped at 300px and scrolls inside it.
+   Without a max-height the list grew to fit all 263 zones (~8,400px),
+   stretching the whole Geography bay to 8,500px. The cap used to live
+   only in the narrow-screen media query below 1180px, so on a desktop
+   viewport there was no cap at all. 300px shows ~9 zones at a time. */
 .zonelist-v2 {
   flex: 1;
   min-height: 240px;
+  max-height: 300px;
   overflow-y: auto;
   border: 1px solid var(--line);
   border-top: none;
   background: var(--ground);
-}
-
-@media (max-width: 1180px) {
-  .zonelist-v2 {
-    max-height: 300px;
-  }
 }
 
 .zitem.checked {
@@ -5075,14 +5075,14 @@ button:disabled {
   justify-content: center;
   flex-wrap: nowrap;
   gap: 18px;
-  padding: 4px 0 2px;
+  padding: 0px 0 2px;
 }
 
 .geo-switch button {
   font-family: var(--mono);
   font-style: normal;
   font-weight: 400;
-  font-size: 14px;
+  font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -5695,8 +5695,18 @@ button:disabled {
 
 /* One header row over the unified results: the rank, the group and
    the big number each name their column, for every answer alike.
-   Same grid as .zrow, so the columns line up. */
+   Same grid as .zrow, so the columns line up.
+   Step 29: the header stays put — it is sticky at the top of the
+   .resultscroll-v2 list, so the rows scroll under it instead of
+   carrying the column names away. It needs its own background
+   (ground-2, the results-stage colour) or the rows would show
+   through it, and a z-index so it stays above them. Same treatment
+   the old .ptable-v2 thead already had. */
 .zhead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ground-2);
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 130px;
   gap: 16px;
