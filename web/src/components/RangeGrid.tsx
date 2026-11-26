@@ -324,10 +324,10 @@ export default function RangeGrid({
                 </span>
                 <span className="range-swap" aria-hidden="true">
                   <svg width="28" height="14" viewBox="0 0 28 14" fill="none" aria-hidden="true">
-                    <path d="M26 4H9" stroke="currentColor" strokeWidth="2" />
-                    <path d="M9 1L3 4l6 3Z" fill="currentColor" />
-                    <path d="M2 10h17" stroke="currentColor" strokeWidth="2" />
-                    <path d="M19 7l6 3-6 3Z" fill="currentColor" />
+                    <path d="M2 4h17" stroke="currentColor" strokeWidth="2" />
+                    <path d="M19 1l6 3-6 3Z" fill="currentColor" />
+                    <path d="M26 10H9" stroke="currentColor" strokeWidth="2" />
+                    <path d="M9 7L3 10l6 3Z" fill="currentColor" />
                   </svg>
                 </span>
                 <span className="range-date-wrap">

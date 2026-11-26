@@ -3123,11 +3123,12 @@ input[type="radio"]:focus-visible {
 /* STEP 32 — the readout dates are month/year pickers. The readout
    itself keeps the user's own font and size; the two dates are
    buttons that inherit it, the double arrow between them is a grey
-   SVG (top arrow left, bottom arrow right), and clicking a date
-   opens a themed month/year popover below THAT date: a year stepper
-   over a 3x4 month grid, unpublished months disabled, one click
-   picks. Clicking the year opens a year grid (12 years per page,
-   paging chevrons); picking a year returns to the month grid. */
+   SVG (top arrow right, bottom arrow left, as in his sketch), and
+   clicking a date opens a themed month/year popover below THAT
+   date: a year stepper over a 3x4 month grid, unpublished months
+   disabled, one click picks. Clicking the year opens a year grid
+   (12 years per page, paging chevrons); picking a year returns
+   to the month grid. */
 .range-date-btn {
   font: inherit;
   letter-spacing: inherit;
