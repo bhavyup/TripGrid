@@ -3092,7 +3092,6 @@ input[type="radio"]:focus-visible {
   align-items: baseline;
   gap: 14px;
   flex-wrap: wrap;
-  position: relative;
 }
 
 .archive-title {
@@ -3125,8 +3124,10 @@ input[type="radio"]:focus-visible {
    itself keeps the user's own font and size; the two dates are
    buttons that inherit it, the double arrow between them is a grey
    SVG (top arrow left, bottom arrow right), and clicking a date
-   opens a themed month/year popover: a year stepper over a 3x4
-   month grid, unpublished months disabled, one click picks. */
+   opens a themed month/year popover below THAT date: a year stepper
+   over a 3x4 month grid, unpublished months disabled, one click
+   picks. Clicking the year opens a year grid (12 years per page,
+   paging chevrons); picking a year returns to the month grid. */
 .range-date-btn {
   font: inherit;
   letter-spacing: inherit;
@@ -3144,6 +3145,13 @@ input[type="radio"]:focus-visible {
 }
 .range-date-btn:disabled {
   cursor: default;
+}
+
+/* The anchor for the popover: each date button sits in its own
+   wrapper, so the picker drops below the date that was clicked. */
+.range-date-wrap {
+  position: relative;
+  display: inline-block;
 }
 
 .range-swap {
@@ -3218,6 +3226,37 @@ input[type="radio"]:focus-visible {
   font-weight: 600;
   color: var(--bone);
   font-variant-numeric: tabular-nums;
+}
+/* In the month view the year is a button: clicking it opens the year
+   grid. It looks like plain year text until hovered. */
+button.range-picker-year-val {
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+button.range-picker-year-val:hover {
+  color: var(--amber);
+  border-bottom-color: var(--amber-dim);
+}
+
+/* Back link at the top of the year view, back to the month grid. */
+.range-picker-back {
+  display: block;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+  cursor: pointer;
+}
+.range-picker-back:hover {
+  color: var(--amber);
 }
 
 .range-picker-months {

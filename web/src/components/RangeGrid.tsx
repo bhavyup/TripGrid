@@ -59,6 +59,12 @@ export default function RangeGrid({
   const [pickerYear, setPickerYear] = useState<number>(() =>
     Number((effectiveRange?.[0] ?? months[0] ?? "2017-01").slice(0, 4))
   );
+  // Which view the popover shows: the month grid, or the year grid (opened by clicking the year).
+  const [pickerView, setPickerView] = useState<"month" | "year">("month");
+  // First year of the 12-year page shown in the year view (2017-2028, 2029-2040, ...).
+  const [yearPage, setYearPage] = useState<number>(() =>
+    Number((effectiveRange?.[0] ?? months[0] ?? "2017-01").slice(0, 4))
+  );
 
   // Close the picker on Escape, and if a run starts while it is open.
   useEffect(() => {
@@ -133,11 +139,19 @@ export default function RangeGrid({
       : null);
   const firstYear = Number(years[0] ?? "2017");
   const lastYear = Number(years[years.length - 1] ?? "2017");
+  // The 12-year page containing a year: pages start at the first archive year (2017-2028, ...).
+  const pageFor = (y: number) => firstYear + Math.floor((y - firstYear) / 12) * 12;
+  // Clicking the year in the month view opens the year grid on the page holding that year.
+  const openYearPicker = () => {
+    setYearPage(pageFor(pickerYear));
+    setPickerView("year");
+  };
 
   // Open a picker for one end; the popover browses that end's year. Clicking the same date again closes it.
   const openPicker = (side: "start" | "end") => {
     if (isAudit || locked) return;
     setPickerYear(Number((side === "start" ? curSpan[0] : curSpan[1]).slice(0, 4)));
+    setPickerView("month");
     setPicker((prev) => (prev === side ? null : side));
   };
 
@@ -152,6 +166,129 @@ export default function RangeGrid({
       onChange([m < curSpan[0] ? m : curSpan[0], m]);
     }
   };
+
+  // The popover, rendered inside the wrapper of whichever date opened it, so it drops below that date.
+  // Month view: year stepper + 12-month grid; clicking the year opens the year view.
+  // Year view: a 12-year page (2017-2028, ...) with paging; picking a year returns to the month view.
+  const pickerPopover =
+    picker === null ? null : (
+      <div
+        className="range-picker"
+        role="dialog"
+        aria-label={picker === "start" ? "Choose start month" : "Choose end month"}
+      >
+        {pickerView === "month" ? (
+          <>
+            <div className="range-picker-kicker">
+              {picker === "start" ? "Start month" : "End month"}
+            </div>
+            <div className="range-picker-year">
+              <button
+                type="button"
+                className="range-picker-year-btn"
+                disabled={pickerYear <= firstYear}
+                aria-label="Previous year"
+                onClick={() => setPickerYear((y) => Math.max(firstYear, y - 1))}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="range-picker-year-val"
+                title="Choose a year"
+                aria-label="Choose a year"
+                onClick={openYearPicker}
+              >
+                {pickerYear}
+              </button>
+              <button
+                type="button"
+                className="range-picker-year-btn"
+                disabled={pickerYear >= lastYear}
+                aria-label="Next year"
+                onClick={() => setPickerYear((y) => Math.min(lastYear, y + 1))}
+              >
+                ›
+              </button>
+            </div>
+            <div className="range-picker-months">
+              {MONTHS.map((label, idx) => {
+                const m = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
+                const disabled = !present.has(m);
+                const selected = m === (picker === "start" ? curSpan[0] : curSpan[1]);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`range-picker-month${selected ? " on" : ""}`}
+                    disabled={disabled}
+                    onClick={() => applyPicker(picker, m)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="range-picker-kicker">
+              {picker === "start" ? "Start year" : "End year"}
+            </div>
+            <button
+              type="button"
+              className="range-picker-back"
+              onClick={() => setPickerView("month")}
+            >
+              ‹ Months
+            </button>
+            <div className="range-picker-year">
+              <button
+                type="button"
+                className="range-picker-year-btn"
+                disabled={yearPage <= firstYear}
+                aria-label="Previous 12 years"
+                onClick={() => setYearPage((p) => Math.max(firstYear, p - 12))}
+              >
+                ‹
+              </button>
+              <span className="range-picker-year-val">
+                {yearPage} – {yearPage + 11}
+              </span>
+              <button
+                type="button"
+                className="range-picker-year-btn"
+                disabled={yearPage + 12 > lastYear}
+                aria-label="Next 12 years"
+                onClick={() => setYearPage((p) => p + 12)}
+              >
+                ›
+              </button>
+            </div>
+            <div className="range-picker-months">
+              {Array.from({ length: 12 }, (_, i) => yearPage + i).map((y) => {
+                const disabled = !years.includes(String(y));
+                const selected = y === pickerYear;
+                return (
+                  <button
+                    key={y}
+                    type="button"
+                    className={`range-picker-month${selected ? " on" : ""}`}
+                    disabled={disabled}
+                    onClick={() => {
+                      setPickerYear(y);
+                      setPickerView("month");
+                    }}
+                  >
+                    {y}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
 
   const has2020 = months.some((m) => m.startsWith("2020-"));
   const has2025 = months.some((m) => m.startsWith("2025-"));
@@ -171,97 +308,53 @@ export default function RangeGrid({
               </span>
             ) : displaySpan ? (
               <>
-                <button
-                  type="button"
-                  className={`range-date-btn${value ? " amber" : ""}`}
-                  disabled={isAudit}
-                  title="Change start month"
-                  aria-haspopup="dialog"
-                  aria-expanded={picker === "start"}
-                  onClick={() => openPicker("start")}
-                >
-                  {displaySpan[0]}
-                </button>
+                <span className="range-date-wrap">
+                  <button
+                    type="button"
+                    className={`range-date-btn${value ? " amber" : ""}`}
+                    disabled={isAudit}
+                    title="Change start month"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker === "start"}
+                    onClick={() => openPicker("start")}
+                  >
+                    {displaySpan[0]}
+                  </button>
+                  {picker === "start" && pickerPopover}
+                </span>
                 <span className="range-swap" aria-hidden="true">
-                  <svg width="22" height="12" viewBox="0 0 22 12" fill="none" aria-hidden="true">
-                    <path d="M20 3H6" stroke="currentColor" strokeWidth="1.5" />
-                    <path d="M7 1L2 3l5 2Z" fill="currentColor" />
-                    <path d="M2 9h14" stroke="currentColor" strokeWidth="1.5" />
-                    <path d="M15 7l5 2-5 2Z" fill="currentColor" />
+                  <svg width="28" height="14" viewBox="0 0 28 14" fill="none" aria-hidden="true">
+                    <path d="M26 4H9" stroke="currentColor" strokeWidth="2" />
+                    <path d="M9 1L3 4l6 3Z" fill="currentColor" />
+                    <path d="M2 10h17" stroke="currentColor" strokeWidth="2" />
+                    <path d="M19 7l6 3-6 3Z" fill="currentColor" />
                   </svg>
                 </span>
-                <button
-                  type="button"
-                  className={`range-date-btn${value ? " amber" : ""}`}
-                  disabled={isAudit}
-                  title="Change end month"
-                  aria-haspopup="dialog"
-                  aria-expanded={picker === "end"}
-                  onClick={() => openPicker("end")}
-                >
-                  {displaySpan[1]}
-                </button>
+                <span className="range-date-wrap">
+                  <button
+                    type="button"
+                    className={`range-date-btn${value ? " amber" : ""}`}
+                    disabled={isAudit}
+                    title="Change end month"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker === "end"}
+                    onClick={() => openPicker("end")}
+                  >
+                    {displaySpan[1]}
+                  </button>
+                  {picker === "end" && pickerPopover}
+                </span>
               </>
             ) : (
               <span>Whole archive</span>
             )}
           </span>
           {picker !== null && (
-            <>
-              <div
-                className="range-picker-backdrop"
-                onClick={() => setPicker(null)}
-                aria-hidden="true"
-              />
-              <div
-                className="range-picker"
-                role="dialog"
-                aria-label={picker === "start" ? "Choose start month" : "Choose end month"}
-              >
-                <div className="range-picker-kicker">
-                  {picker === "start" ? "Start month" : "End month"}
-                </div>
-                <div className="range-picker-year">
-                  <button
-                    type="button"
-                    className="range-picker-year-btn"
-                    disabled={pickerYear <= firstYear}
-                    aria-label="Previous year"
-                    onClick={() => setPickerYear((y) => Math.max(firstYear, y - 1))}
-                  >
-                    ‹
-                  </button>
-                  <span className="range-picker-year-val">{pickerYear}</span>
-                  <button
-                    type="button"
-                    className="range-picker-year-btn"
-                    disabled={pickerYear >= lastYear}
-                    aria-label="Next year"
-                    onClick={() => setPickerYear((y) => Math.min(lastYear, y + 1))}
-                  >
-                    ›
-                  </button>
-                </div>
-                <div className="range-picker-months">
-                  {MONTHS.map((label, idx) => {
-                    const m = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
-                    const disabled = !present.has(m);
-                    const selected = m === (picker === "start" ? curSpan[0] : curSpan[1]);
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        className={`range-picker-month${selected ? " on" : ""}`}
-                        disabled={disabled}
-                        onClick={() => applyPicker(picker, m)}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
+            <div
+              className="range-picker-backdrop"
+              onClick={() => setPicker(null)}
+              aria-hidden="true"
+            />
           )}
         </div>
 
